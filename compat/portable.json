@@ -1,0 +1,18 @@
+{
+  "SourceSHA256": "1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf",
+  "OutputSHA256": "e59dd679305e3dd9f1b8c504ededfd70f6bbd3c779ca2a8bcd62a67e60a62109",
+  "Edits": [
+    {
+      "Offset": 574848,
+      "Before": "83ec0c53568d4424085750683f000f006a0068b00d4e00680200",
+      "After": "8b442404c7002e5c00008b442408c7002e5c0000b801000000c3",
+      "Note": "Portable paths: both path output buffers receive .\\; preserves cdecl stack"
+    },
+    {
+      "Offset": 327328,
+      "Before": "a114f8",
+      "After": "31c0c3",
+      "Note": "Skip legacy movie initialization; menu continues through existing unavailable-movie path"
+    }
+  ]
+}

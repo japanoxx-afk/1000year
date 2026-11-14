@@ -1,0 +1,5 @@
+cnc-ddraw (MIT)
+Source: https://github.com/FunkyFr3sh/cnc-ddraw
+Binary reused from the existing Armageddon launcher workspace, third-party/cnc-ddraw/ddraw.dll.
+SHA256: 85e0f7d530dfda134793a57cb3e76b0287dcc96892ee57162dd68f47283b03a9
+License: LICENSE.cnc-ddraw

@@ -1,0 +1,114 @@
+{
+  "SourceSHA256": "1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf",
+  "OutputSHA256": "38ac3bc0fcdfa90339536d7dd4c92cf21620d1d5d0ddade8d7958327b3ba3389",
+  "Edits": [
+    {
+      "Offset": 574848,
+      "Before": "83ec0c53568d4424085750683f000f006a0068b00d4e00680200",
+      "After": "8b442404c7002e5c00008b442408c7002e5c0000b801000000c3",
+      "Note": "Portable paths: both path output buffers receive .\\; preserves cdecl stack"
+    },
+    {
+      "Offset": 327328,
+      "Before": "a114f8",
+      "After": "31c0c3",
+      "Note": "Skip legacy movie initialization; menu continues through existing unavailable-movie path"
+    },
+    {
+      "Offset": 912520,
+      "Before": "02000000",
+      "After": "04000000",
+      "Note": "Engine mode 4: 1024 x 768 x 8bpp"
+    },
+    {
+      "Offset": 116357,
+      "Before": "e0010000",
+      "After": "00030000",
+      "Note": "Primary game offscreen surface height"
+    },
+    {
+      "Offset": 716243,
+      "Before": "80020000",
+      "After": "00040000",
+      "Note": "Renderer constructor width"
+    },
+    {
+      "Offset": 716248,
+      "Before": "e0010000",
+      "After": "00030000",
+      "Note": "Renderer constructor height"
+    },
+    {
+      "Offset": 464268,
+      "Before": "e0010000",
+      "After": "00030000",
+      "Note": "CreateWindow height"
+    },
+    {
+      "Offset": 464273,
+      "Before": "80020000",
+      "After": "00040000",
+      "Note": "CreateWindow width"
+    },
+    {
+      "Offset": 438263,
+      "Before": "df010000",
+      "After": "ff020000",
+      "Note": "World viewport bottom"
+    },
+    {
+      "Offset": 438317,
+      "Before": "df010000",
+      "After": "ff020000",
+      "Note": "World viewport bottom"
+    },
+    {
+      "Offset": 522679,
+      "Before": "df010000",
+      "After": "ff020000",
+      "Note": "World viewport bottom"
+    },
+    {
+      "Offset": 522711,
+      "Before": "df010000",
+      "After": "ff020000",
+      "Note": "World viewport bottom"
+    },
+    {
+      "Offset": 438268,
+      "Before": "ff010000",
+      "After": "7f030000",
+      "Note": "World viewport right, reserving 128px HUD"
+    },
+    {
+      "Offset": 438297,
+      "Before": "ff010000",
+      "After": "7f030000",
+      "Note": "World viewport right, reserving 128px HUD"
+    },
+    {
+      "Offset": 522684,
+      "Before": "ff010000",
+      "After": "7f030000",
+      "Note": "World viewport right, reserving 128px HUD"
+    },
+    {
+      "Offset": 522696,
+      "Before": "ff010000",
+      "After": "7f030000",
+      "Note": "World viewport right, reserving 128px HUD"
+    },
+    {
+      "Offset": 522729,
+      "Before": "80020000",
+      "After": "00040000",
+      "Note": "Restore renderer width after map overview"
+    },
+    {
+      "Offset": 522739,
+      "Before": "e0010000",
+      "After": "00030000",
+      "Note": "Restore renderer height after map overview"
+    }
+  ]
+}

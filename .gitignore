@@ -1,0 +1,6 @@
+.tools/
+dist/
+analysis/*.asm
+test-game/
+*.user
+analysis/screen-refs.txt
