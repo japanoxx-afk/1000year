@@ -27,7 +27,7 @@
     "refresh": 18679360
   },
   "SourceSHA256": "1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf",
-  "OutputSHA256": "1f885d2a1bd4138cc90968764a235ca555580b46eb1cac05132f94a19b65081c",
+  "OutputSHA256": "8f8f6f1a3aeac038d295fbc4241293a078ab29d5a9a22c52b4fcd0939c830fd6",
   "Edits": [
     {
       "Offset": 246,
@@ -82,6 +82,12 @@
       "Before": "00",
       "After": "e0",
       "Note": "Verified HD patch offset 0x2af"
+    },
+    {
+      "Offset": 5226,
+      "Before": "bd000000",
+      "After": "61ffffff",
+      "Note": "Verified HD patch offset 0x146a"
     },
     {
       "Offset": 58919,

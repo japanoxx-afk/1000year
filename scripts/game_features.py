@@ -3,6 +3,9 @@ def install(g):
  asm,b,raw,va,hook,W=(g[n] for n in ('asm','b','raw','va','hook','W'))
  def emit(code):
   at=va+g['cursor'];blob=asm(at,code);off=raw+g['cursor'];b[off:off+len(blob)]=blob;g['cursor']=(g['cursor']+len(blob)+15)&~15;return at
+ # Fire arrow (attack 17): class 3 siege engines/ships share the native
+ # double-attack branch already used for classes 5 and 6.
+ g['patch'](0x401468,asm(0x401468,'je 0x4013cf'),'fire arrows double against siege engines and ships')
  # The input cursor must offer a rally command before the simulation receiver
  # can process it. Buildings previously offered no ground command at all.
  hook(0x46ccf0,8,'''push edx; push ecx;

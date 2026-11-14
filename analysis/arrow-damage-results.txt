@@ -1,0 +1,217 @@
+[
+  {
+    "defence": 0,
+    "class": 1,
+    "normal": 100,
+    "fire": 100,
+    "poison": 200
+  },
+  {
+    "defence": 0,
+    "class": 2,
+    "normal": 100,
+    "fire": 100,
+    "poison": 200
+  },
+  {
+    "defence": 0,
+    "class": 3,
+    "normal": 100,
+    "fire": 100,
+    "poison": 100
+  },
+  {
+    "defence": 0,
+    "class": 4,
+    "normal": 140,
+    "fire": 100,
+    "poison": 200
+  },
+  {
+    "defence": 0,
+    "class": 5,
+    "normal": 150,
+    "fire": 200,
+    "poison": 100
+  },
+  {
+    "defence": 0,
+    "class": 6,
+    "normal": 100,
+    "fire": 200,
+    "poison": 100
+  },
+  {
+    "defence": 30,
+    "class": 1,
+    "normal": 70,
+    "fire": 70,
+    "poison": 140
+  },
+  {
+    "defence": 30,
+    "class": 2,
+    "normal": 70,
+    "fire": 70,
+    "poison": 140
+  },
+  {
+    "defence": 30,
+    "class": 3,
+    "normal": 70,
+    "fire": 70,
+    "poison": 70
+  },
+  {
+    "defence": 30,
+    "class": 4,
+    "normal": 98,
+    "fire": 70,
+    "poison": 140
+  },
+  {
+    "defence": 30,
+    "class": 5,
+    "normal": 105,
+    "fire": 140,
+    "poison": 70
+  },
+  {
+    "defence": 30,
+    "class": 6,
+    "normal": 70,
+    "fire": 140,
+    "poison": 70
+  },
+  {
+    "defence": 70,
+    "class": 1,
+    "normal": 30,
+    "fire": 30,
+    "poison": 60
+  },
+  {
+    "defence": 70,
+    "class": 2,
+    "normal": 30,
+    "fire": 30,
+    "poison": 60
+  },
+  {
+    "defence": 70,
+    "class": 3,
+    "normal": 30,
+    "fire": 30,
+    "poison": 30
+  },
+  {
+    "defence": 70,
+    "class": 4,
+    "normal": 42,
+    "fire": 30,
+    "poison": 60
+  },
+  {
+    "defence": 70,
+    "class": 5,
+    "normal": 45,
+    "fire": 60,
+    "poison": 30
+  },
+  {
+    "defence": 70,
+    "class": 6,
+    "normal": 30,
+    "fire": 60,
+    "poison": 30
+  },
+  {
+    "defence": 90,
+    "class": 1,
+    "normal": 10,
+    "fire": 10,
+    "poison": 20
+  },
+  {
+    "defence": 90,
+    "class": 2,
+    "normal": 10,
+    "fire": 10,
+    "poison": 20
+  },
+  {
+    "defence": 90,
+    "class": 3,
+    "normal": 10,
+    "fire": 10,
+    "poison": 10
+  },
+  {
+    "defence": 90,
+    "class": 4,
+    "normal": 14,
+    "fire": 10,
+    "poison": 20
+  },
+  {
+    "defence": 90,
+    "class": 5,
+    "normal": 15,
+    "fire": 20,
+    "poison": 10
+  },
+  {
+    "defence": 90,
+    "class": 6,
+    "normal": 10,
+    "fire": 20,
+    "poison": 10
+  },
+  {
+    "defence": 100,
+    "class": 1,
+    "normal": 10,
+    "fire": 10,
+    "poison": 20
+  },
+  {
+    "defence": 100,
+    "class": 2,
+    "normal": 10,
+    "fire": 10,
+    "poison": 20
+  },
+  {
+    "defence": 100,
+    "class": 3,
+    "normal": 10,
+    "fire": 10,
+    "poison": 10
+  },
+  {
+    "defence": 100,
+    "class": 4,
+    "normal": 14,
+    "fire": 10,
+    "poison": 20
+  },
+  {
+    "defence": 100,
+    "class": 5,
+    "normal": 15,
+    "fire": 20,
+    "poison": 10
+  },
+  {
+    "defence": 100,
+    "class": 6,
+    "normal": 10,
+    "fire": 20,
+    "poison": 10
+  }
+]
+HIT 17 HP 9930 changed offsets ['0x9c', '0x9d']
+HIT 38 HP 9860 changed offsets ['0x9c', '0x9d']
+PROJECTILE 4 HP 9930 changed offsets ['0x9c', '0x9d']
+PROJECTILE 5 HP 9860 changed offsets ['0x9c', '0x9d']
+PASS 16968 original x86 damage cases; integer rounding, minimum damage and defence cap
