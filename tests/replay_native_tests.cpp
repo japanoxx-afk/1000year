@@ -6,6 +6,7 @@
 // Windows chooses heap/stack addresses. The production adapter uses game data.
 volatile unsigned char fixtureAddressSpace[8*1024*1024];
 int main(){
+ speed=1;speedKeys=0;setSpeedKeys(2);assert(speed==2);speed=1;setSpeedKeys(2);assert(speed==1);setSpeedKeys(0);setSpeedKeys(4);assert(speed==4);setSpeedKeys(1);assert(speed==1);
  fixtureAddressSpace[0]=0;
  memset((void*)0xb10000,0,0x20000);
  memset((void*)0xa60000,0,0x20000);

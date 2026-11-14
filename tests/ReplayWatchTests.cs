@@ -6,6 +6,7 @@ using Myth;
 class ReplayWatchTests {
  static int Main(string[] args){string root=Path.Combine(Path.GetTempPath(),"MythWatchTest-"+Guid.NewGuid().ToString("N"));
   try{
+   if(ReplayAssociation.OpenCommand(@"C:\Games\천년의 신화\MythLauncher.exe")!="\"C:\\Games\\천년의 신화\\MythLauncher.exe\" --replay \"%1\"")throw new Exception("Replay association command quoting failed");
    Core.UserHome=root;Replays.Library=Path.Combine(root,"Replays");string session=Path.Combine(root,"R","fixture");Directory.CreateDirectory(session);
    File.Copy(Path.Combine(args[0],"initial.dat"),Path.Combine(session,"initial.dat"));File.Copy(Path.Combine(args[0],"commands.bin"),Path.Combine(session,"commands.partial"));File.WriteAllText(Path.Combine(session,"status.txt"),"COMPLETE");
    var info=new ReplayInfo{Mode=3,RecordedAt=DateTime.UtcNow.ToString("o"),GameSHA256=Core.Hash(args[1]),PatchSHA256=Core.Hash(args[2]),EngineSHA256=Core.Hash(args[3])};

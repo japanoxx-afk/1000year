@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace Myth {
  static class Program {
   [System.Runtime.InteropServices.DllImport("user32.dll")]static extern bool SetProcessDPIAware();
-  [STAThread] static void Main(string[] args) {if(args.Length==3&&args[0]=="--replay-watch"){Replays.Watch(Int32.Parse(args[1]),args[2]);return;}SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);bool created;using(var mutex=new Mutex(true,"Local\\1000year-Launcher",out created)){if(!created){MessageBox.Show("런처가 이미 실행 중입니다.");return;}Application.Run(new Launcher());}}
+  [STAThread] static void Main(string[] args) {if(args.Length==3&&args[0]=="--replay-watch"){Replays.Watch(Int32.Parse(args[1]),args[2]);return;}SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);if(args.Length==2&&args[0]=="--replay"){try{var settings=Core.Load();string game=String.IsNullOrWhiteSpace(settings.GameDirectory)?Core.Home:settings.GameDirectory;Application.Run(Replays.Play(Path.GetFullPath(args[1]),game,settings.Fullscreen,false));}catch(Exception ex){MessageBox.Show(ex.Message,"리플레이 실행 실패");}return;}bool created;using(var mutex=new Mutex(true,"Local\\1000year-Launcher",out created)){if(!created){MessageBox.Show("런처가 이미 실행 중입니다.");return;}Application.Run(new Launcher());}}
  }
  public sealed class Launcher:Form {
   Settings settings=Core.Load();TextBox path;ComboBox mode;CheckBox full,auto,record;Label status;Button play,update,replays;bool busy;FileSystemWatcher replayWatcher;CancellationTokenSource stop=new CancellationTokenSource();
@@ -34,7 +34,7 @@ namespace Myth {
    replays=Button("리플레이 목록",438,399,250);replays.Click+=(s,e)=>new ReplayLibrary(path.Text,full.Checked).Show(this);
    status=new Label{Text="단축키: . 쉬는 일꾼 / ` 군사 유닛 / Tab 영웅 전체 선택",Location=new Point(34,460),Size=new Size(654,65),ForeColor=Color.FromArgb(189,198,205)};Controls.Add(status);
    Directory.CreateDirectory(Replays.Library);replayWatcher=new FileSystemWatcher(Replays.Library,"*.mythreplay");replayWatcher.Created+=(s,e)=>{if(!IsDisposed&&IsHandleCreated)try{BeginInvoke((Action)(()=>Say("리플레이 자동 저장 완료: "+e.Name)));}catch(InvalidOperationException){}};replayWatcher.EnableRaisingEvents=true;
-   Shown+=async(s,e)=>{await Task.Run(()=>Replays.Recover());if(!IsDisposed&&auto.Checked)await CheckUpdate();};FormClosing+=(s,e)=>{if(busy){e.Cancel=true;return;}Save();stop.Cancel();replayWatcher.Dispose();};
+   Shown+=async(s,e)=>{try{ReplayAssociation.Register();}catch(Exception ex){Core.Log("리플레이 파일 연결 실패: "+ex.Message);}await Task.Run(()=>Replays.Recover());if(!IsDisposed&&auto.Checked)await CheckUpdate();};FormClosing+=(s,e)=>{if(busy){e.Cancel=true;return;}Save();stop.Cancel();replayWatcher.Dispose();};
   }
   Button Button(string text,int x,int y,int width) {var b=new Button{Text=text,Location=new Point(x,y),Size=new Size(width,34),FlatStyle=FlatStyle.Flat,BackColor=Color.FromArgb(44,54,64),ForeColor=ForeColor};Controls.Add(b);return b;}
   void Save(){settings.GameDirectory=path.Text;settings.Mode=mode.SelectedIndex;settings.Fullscreen=full.Checked;settings.AutoUpdate=auto.Checked;settings.RecordReplay=record.Checked;try{Core.Save(settings);}catch(Exception ex){Core.Log(ex.ToString());}}

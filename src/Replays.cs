@@ -35,13 +35,13 @@ namespace Myth {
    }
   }
   public static void Recover(){string root=Path.Combine(Core.UserHome,"R");if(!Directory.Exists(root))return;foreach(string session in Directory.GetDirectories(root)){try{string status=Path.Combine(session,"status.txt");if(File.Exists(status)&&File.ReadAllText(status)=="COMPLETE")Publish(session);}catch(Exception ex){Core.Log("리플레이 복구 확인 필요: "+ex.Message);}}}
-  public static void Play(string file,string directory,bool fullscreen){
+  public static ReplayControls Play(string file,string directory,bool fullscreen,bool show=true){
    if(Core.GameRunning(directory))throw new IOException("게임을 종료한 뒤 리플레이를 재생하세요.");
    string session=Session();ReplayInfo info=ReplayArchive.Read(file,session);string engine=Engine();
    string exe=Core.Prepare(directory,info.Mode,fullscreen,info.PatchSHA256);
    if(Core.Hash(Path.Combine(directory,"MMyth.exe"))!=info.GameSHA256||Core.Hash(exe)!=info.PatchSHA256||info.Rules!=1)throw new IOException("현재 게임·패치·리플레이 규칙이 기록과 다릅니다.");
    var process=ReplayProcess.Start(exe,engine,session,true);
-   new ReplayControls(process,session,info).Show();
+   var controls=new ReplayControls(process,session,info);if(show)controls.Show();return controls;
   }
  }
  public sealed class ReplayLibrary:Form {
@@ -56,6 +56,7 @@ namespace Myth {
    list.Format+=(s,e)=>e.Value=Path.GetFileName(Convert.ToString(e.ListItem));list.FormattingEnabled=true;
    list.SelectedIndexChanged+=(s,e)=>{try{var i=ReplayArchive.Read((string)list.SelectedItem,null);detail.Text=DateTime.Parse(i.RecordedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")+"\r\n"+((long)(i.LastTick-i.FirstTick)*i.TickMilliseconds/1000)+"초 · 명령 플레이어 "+i.Players.Length+"명";}catch(Exception ex){detail.Text=ex.Message;}};
    play.Click+=(s,e)=>{if(list.SelectedItem!=null)Start((string)list.SelectedItem);};
+   list.DoubleClick+=(s,e)=>{if(list.SelectedItem!=null)Start((string)list.SelectedItem);};
    open.Click+=(s,e)=>{using(var d=new OpenFileDialog{Filter="천년의신화 리플레이|*.mythreplay",InitialDirectory=Replays.Library})if(d.ShowDialog(this)==DialogResult.OK)Start(d.FileName);};
    folder.Click+=(s,e)=>Process.Start(new ProcessStartInfo(Replays.Library){UseShellExecute=true});
    if(list.Items.Count>0)list.SelectedIndex=0;else detail.Text="기록한 경기가 없습니다. 리플레이 기록을 켜고 게임을 시작하세요.";
@@ -68,9 +69,19 @@ namespace Myth {
   public ReplayControls(Process process,string work,ReplayInfo info){game=process;session=work;Text="리플레이 재생";ClientSize=new Size(540,210);Font=new Font("맑은 고딕",10);
    state.SetBounds(16,12,510,65);state.Text="저장된 경기를 불러오고 있습니다.";Controls.Add(state);
    int x=16;foreach(string command in new[]{"play","pause","step"}){string value=command;var b=new Button{Text=command=="play"?"재생":command=="pause"?"일시정지":"한 프레임",Bounds=new Rectangle(x,92,150,40)};Controls.Add(b);b.Click+=(s,e)=>{try{File.WriteAllText(Path.Combine(session,"control.txt"),value);if(value!="pause"&&!game.HasExited)SetForegroundWindow(game.MainWindowHandle);}catch(Exception ex){state.Text=ex.Message;}};x+=170;}
-   var speed=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Bounds=new Rectangle(16,150,150,30)};speed.Items.AddRange(new object[]{"1배속","2배속","4배속","8배속"});speed.SelectedIndex=0;Controls.Add(speed);speed.SelectedIndexChanged+=(s,e)=>File.WriteAllText(Path.Combine(session,"control.txt"),"speed"+(1<<speed.SelectedIndex));
+   var speed=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Bounds=new Rectangle(16,150,150,30)};speed.Items.AddRange(new object[]{"1배속 (1)","2배속 (2)","4배속 (4)"});speed.SelectedIndex=0;Controls.Add(speed);speed.SelectedIndexChanged+=(s,e)=>File.WriteAllText(Path.Combine(session,"control.txt"),"speed"+(1<<speed.SelectedIndex));
    var close=new Button{Text="게임 닫기",Bounds=new Rectangle(186,145,150,40)};Controls.Add(close);close.Click+=(s,e)=>{if(!game.HasExited)game.CloseMainWindow();};
    timer.Interval=500;timer.Tick+=(s,e)=>{try{if(game.HasExited){state.Text="게임이 종료되었습니다.";timer.Stop();return;}string f=Path.Combine(session,"status.txt");if(File.Exists(f)){string text=File.ReadAllText(f);if(text=="READY")state.Text="저장된 경기를 불러오고 있습니다.";else if(text=="COMPLETE")state.Text="리플레이 재생 완료. ‘게임 닫기’로 종료할 수 있습니다.";else if(text.StartsWith("ERROR")){state.Text="기록과 게임 상태가 일치하지 않아 재생을 중단했습니다.";Core.Log(text);}else if(text.StartsWith("PLAYING")){string[] parts=text.Split(' ');int tick;if(parts.Length==3&&Int32.TryParse(parts[2],out tick))state.Text="재생 중 · "+((long)(tick-info.FirstTick)*info.TickMilliseconds/1000)+" / "+((long)(info.LastTick-info.FirstTick)*info.TickMilliseconds/1000)+"초";else state.Text="재생 중";}}}catch(IOException){}};timer.Start();FormClosed+=(s,e)=>timer.Dispose();
+  }
+ }
+ public static class ReplayAssociation {
+  [System.Runtime.InteropServices.DllImport("shell32.dll")]static extern void SHChangeNotify(uint action,uint flags,IntPtr first,IntPtr second);
+  public static string OpenCommand(string executable){return "\""+Path.GetFullPath(executable)+"\" --replay \"%1\"";}
+  public static void Register(){
+   using(var extension=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\.mythreplay"))extension.SetValue("","1000year.Replay");
+   using(var type=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\1000year.Replay"))type.SetValue("","천년의신화 리플레이");
+   using(var command=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\1000year.Replay\shell\open\command"))command.SetValue("",OpenCommand(Path.Combine(Core.Home,"MythLauncher.exe")));
+   SHChangeNotify(0x08000000,0,IntPtr.Zero,IntPtr.Zero);
   }
  }
 }

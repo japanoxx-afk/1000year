@@ -33,9 +33,20 @@ uint32_t dispatchResult=1;
 uint32_t frames=0;
 DWORD lastControl=0;
 bool paused=false,stepping=false;
+uint32_t speedKeys=0;
 uint32_t tickMilliseconds=60,speed=1;
+void setSpeedKeys(uint32_t down){uint32_t pressed=down&~speedKeys;speedKeys=down;if(pressed&1)speed=1;if(pressed&2)speed=2;if(pressed&4)speed=4;}
 DWORD lastPlaybackTick=0;
 char checkpoint[MAX_PATH]{};
+WNDPROC previousWindowProc=nullptr;
+void writeSpeed(){FILE* f=_wfopen((root+L"\\control.txt").c_str(),L"wb");if(f){fprintf(f,"speed%u",speed);fclose(f);}}
+LRESULT CALLBACK replayWindowProc(HWND window,UINT message,WPARAM key,LPARAM data){
+ if(playback&&!mem<uint32_t>(0xb9022c)&&(message==WM_KEYDOWN||message==WM_KEYUP)){
+  unsigned value=key=='1'||key==VK_NUMPAD1?1:key=='2'||key==VK_NUMPAD2?2:key=='4'||key==VK_NUMPAD4?4:0;
+  if(value){if(message==WM_KEYDOWN){speed=value;writeSpeed();}return 0;}
+ }
+ return CallWindowProcA(previousWindowProc,window,message,key,data);
+}
 void status(const char* message) {
  std::wstring path=root+L"\\status.txt";
  HANDLE f=CreateFileW(path.c_str(),GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,CREATE_ALWAYS,0,nullptr);
@@ -193,6 +204,15 @@ uint32_t __cdecl timerGate(){
 }
 void __cdecl disableLiveCommands(){ }
 bool pauseRequested(){
+ DWORD foregroundPid=0;GetWindowThreadProcessId(GetForegroundWindow(),&foregroundPid);
+ uint32_t down=0;
+ if(foregroundPid==GetCurrentProcessId()&&!mem<uint32_t>(0xb9022c)){
+  if((GetAsyncKeyState('1')|GetAsyncKeyState(VK_NUMPAD1))&0x8000)down|=1;
+  if((GetAsyncKeyState('2')|GetAsyncKeyState(VK_NUMPAD2))&0x8000)down|=2;
+  if((GetAsyncKeyState('4')|GetAsyncKeyState(VK_NUMPAD4))&0x8000)down|=4;
+ }
+ uint32_t previous=speed;setSpeedKeys(down);
+ if(speed!=previous)writeSpeed();
  if(GetTickCount()-lastControl>=100){
   lastControl=GetTickCount();
   FILE* f=_wfopen((root+L"\\control.txt").c_str(),L"rb");
@@ -202,7 +222,6 @@ bool pauseRequested(){
    if(!strcmp(text,"speed1"))speed=1;
    if(!strcmp(text,"speed2"))speed=2;
    if(!strcmp(text,"speed4"))speed=4;
-   if(!strcmp(text,"speed8"))speed=8;
    if(!strcmp(text,"step")){paused=false;stepping=true;FILE* w=_wfopen((root+L"\\control.txt").c_str(),L"wb");if(w){fwrite("pause",1,5,w);fclose(w);}}
   }
  }
@@ -269,8 +288,21 @@ void __cdecl bootstrap(){
 #ifdef MYTH_REPLAY_TEST
  if(fromSave){if(!checkpointOperation(true)){fail("ERROR: fixture restore failed");return;}}
 #endif
- if(playback){begin();if(failed)return;}
+ // The renderer must be in battle mode BEFORE loading the checkpoint palette.
+ // Recreating DirectDraw surfaces afterwards discarded that palette (black
+ // screen), and bypassing the menu exit left menumusic.YAV playing.
+ if(playback)((void(__cdecl*)())0x41f980)();
  ((void(__cdecl*)())0x46afd0)();
+ if(playback){
+  begin();if(failed)return;
+  HWND window=mem<HWND>(0x7a2ce0);
+  previousWindowProc=(WNDPROC)SetWindowLongPtrA(window,GWLP_WNDPROC,(LONG_PTR)replayWindowProc);
+  if(!previousWindowProc){fail("ERROR: replay keyboard hookup failed");return;}
+  ((void(__cdecl*)(int))0x468b20)(mem<int16_t>(0xca5628));
+  int player=mem<int32_t>(0xcbdc3c);
+  if(player<0||player>=8){fail("ERROR: invalid viewpoint player");return;}
+  ((int(__cdecl*)(int))0x469a40)(mem<uint8_t>(0xb137bc+player*0x33d4));
+ }
  mem<uint16_t>(0x4dec90)=3;
  mem<uint32_t>(0xcedd74)=0;mem<uint32_t>(0xcedd78)=0;
  mem<uint32_t>(0xcedd7c)=0;mem<uint32_t>(0xcedd80)=0;
