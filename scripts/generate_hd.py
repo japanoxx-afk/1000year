@@ -102,10 +102,10 @@ for i in md.disasm(p.get_data(0x47fa10-0x400000,0x47fe3e-0x47fa10),0x47fa10):
 # The original cleanup intentionally retains the resource-bar surface. Reuse it
 # on a mode change rather than overwriting its pointer with an empty surface.
 hook(0x41c88d,6,'cmp dword ptr [0x651510],0; jne 0x41c8c2; push 0; push 1; push 12; jmp 0x41c893')
-# Resource strip starts at the left edge with a 4px inset; subsequent items stay relative.
-d(0x48b897,4,"resource first icon x")
-d(0x48b8bb,4,"resource numeric layout origin")
+# Resource alignment and selection helpers are installed below.
 # Bottom hint retains its original left x=50; only screen-bottom anchoring remains.
+from game_features import install
+features=install(globals())
 assert cursor<0x2000
 assert 0x10000+VW*H<=0x100000
 # Refresh canonical recipe after the final hook.
@@ -115,7 +115,7 @@ while j<len(source):
  start=j
  while j<len(source) and source[j]!=b[j]:j+=1
  hunks.append(dict(Offset=start,Before=source[start:j].hex(),After=b[start:j].hex(),Note='Verified HD patch offset '+hex(start)))
-recipe=dict(SourceSHA256=hashlib.sha256(source).hexdigest(),OutputSHA256=hashlib.sha256(b).hexdigest(),Edits=hunks,AppendHex=b[len(source):].hex())
+recipe=dict(Features=features,SourceSHA256=hashlib.sha256(source).hexdigest(),OutputSHA256=hashlib.sha256(b).hexdigest(),Edits=hunks,AppendHex=b[len(source):].hex())
 pathlib.Path(args.output).write_text(json.dumps(recipe,indent=2))
 if args.exe: pathlib.Path(args.exe).write_bytes(b)
 print('HD recipe:',len(hunks),'hunks; SHA256',recipe['OutputSHA256'])

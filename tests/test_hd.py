@@ -49,17 +49,19 @@ assert struct.unpack('<I',u.mem_read(0x208004,4))[0]==900-DX
 assert struct.unpack('<I',u.mem_read(0x208008,4))[0]==700
 print('PASS HUD transparency hit test maps display coordinates to source coordinates')
 
-# Only the shared icon/text origin changes; all resource spacing remains original.
-expected=bytearray(pefile.PE(data=s).get_data(0x48b870-base,0x269))
-struct.pack_into('<I',expected,0x48b897-0x48b870,4)
-struct.pack_into('<I',expected,0x48b8bb-0x48b870,4)
-assert p.get_data(0x48b870-base,0x269)==bytes(expected)
-assert run(0x48b896,stop=0x48b89b)==-4
-assert struct.unpack('<I',u.mem_read(0x207ffc,4))[0]==4
-u.reg_write(UC_X86_REG_ESI,20)
-assert run(0x48b8b9,stop=0x48b8bf)==0
-assert u.reg_read(UC_X86_REG_ESI)==24
-print('PASS left-edge resource icon and numeric origin; existing spacing preserved')
+# Resources right-align using the complete numeric width, including changing digits.
+u.mem_write(0x469c10,bytes.fromhex('8b44240483f8217506b808000000c3b814000000c3'))
+u.ctl_remove_cache(0x469c10,0x469c30)
+player=0x600000
+for rice,wood,pop,limit in [(600,500,20,1600),(0,0,0,0),(123456,98765,1500,1600)]:
+ put(player+0x14,rice,wood,pop)
+ u.mem_write(player+0x1b5c,struct.pack('<h',0));u.mem_write(player+0x1b62,struct.pack('<h',limit))
+ u.reg_write(UC_X86_REG_EBP,player)
+ assert run(0x48b87c,stop=0x48b882)==-4
+ origin=struct.unpack('<I',u.mem_read(r['Features']['origin'],4))[0]
+ width=3*20+20+8*(sum(len(str(v)) for v in [rice,wood,pop,limit])+1)
+ assert origin+width==W-4
+print('PASS resource icon and numeric strip right-align with varying digit counts')
 
 # Exercise the real minimap projection using its new shared screen origin.
 mx,my=467+DX,385+DY

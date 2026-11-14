@@ -30,7 +30,7 @@ namespace Myth {
    play=Button("게임 시작",34,333,270);play.Height=52;play.BackColor=Color.FromArgb(162,119,54);play.Font=new Font(Font,FontStyle.Bold);play.Click+=(s,e)=>Launch();
    update=Button("업데이트 확인",320,333,176);update.Height=52;update.Click+=async(s,e)=>await CheckUpdate();
    var notes=Button("패치노트",512,333,176);notes.Height=52;notes.Click+=(s,e)=>Process.Start(new ProcessStartInfo("https://github.com/japanoxx-afk/1000year/releases"){UseShellExecute=true});
-   status=new Label{Text="게임 폴더와 화면 설정을 선택하세요.",Location=new Point(34,405),Size=new Size(654,54),ForeColor=Color.FromArgb(189,198,205)};Controls.Add(status);
+   status=new Label{Text="단축키: . 쉬는 일꾼 / ` 군사 유닛 / Tab 영웅 전체 선택",Location=new Point(34,405),Size=new Size(654,54),ForeColor=Color.FromArgb(189,198,205)};Controls.Add(status);
    Shown+=async(s,e)=>{if(auto.Checked)await CheckUpdate();};FormClosing+=(s,e)=>{if(busy){e.Cancel=true;return;}Save();stop.Cancel();};
   }
   Button Button(string text,int x,int y,int width) {var b=new Button{Text=text,Location=new Point(x,y),Size=new Size(width,34),FlatStyle=FlatStyle.Flat,BackColor=Color.FromArgb(44,54,64),ForeColor=ForeColor};Controls.Add(b);return b;}

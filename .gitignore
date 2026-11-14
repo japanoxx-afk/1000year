@@ -4,3 +4,4 @@ analysis/*.asm
 test-game/
 *.user
 analysis/screen-refs.txt
+__pycache__/

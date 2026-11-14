@@ -1,0 +1,436 @@
+"""V1.070KR local-player selection and HUD helpers. No simulation state changes."""
+def install(g):
+ asm,b,raw,va,hook,W=(g[n] for n in ('asm','b','raw','va','hook','W'))
+ def emit(code):
+  at=va+g['cursor'];blob=asm(at,code);off=raw+g['cursor'];b[off:off+len(blob)]=blob;g['cursor']=(g['cursor']+len(blob)+15)&~15;return at
+ origin=va+0x2400;idle=origin+4;count=origin+8;busy=origin+12;keys=origin+16
+ qcount=origin+20;qread=origin+24;qwrite=origin+28;queue=va+0x4000
+ fmt=va+0x2500;txt=va+0x2540;group=va+0x2800
+ label='쉬는 일꾼 : %d'.encode('cp949')+b'\0';b[raw+0x2500:raw+0x2500+len(label)]=label
+ # ESI=index, EDI=unit pointer. Result bitmask: idle worker=1, military=2, hero=4.
+ classify=emit('''
+ xor eax,eax
+ cmp esi,1200
+ jae no
+ cmp word ptr [esi*2+0xa79620],0
+ je no
+ cmp dword ptr [edi+0x9c],0
+ jle no
+ cmp byte ptr [edi+0x324],1
+ jne no
+ movsx edx,byte ptr [edi+0x76]
+ cmp edx,dword ptr [0xcbdc3c]
+ jne no
+ mov edx,dword ptr [edi+0x1d8]
+ test edx,2
+ jnz no
+ test edx,1
+ jz no
+ test edx,4
+ jnz military
+ cmp word ptr [edi+0x290],1
+ jne no
+ cmp word ptr [edi+0x388],1
+ jne no
+ cmp word ptr [edi+0x3a0],0
+ jne no
+ cmp word ptr [edi+0x61c],0
+ jne no
+ cmp byte ptr [edi+0x74],0
+ jne no
+ mov eax,dword ptr [edi+0x2a8]
+ cmp eax,dword ptr [edi+0x2b4]
+ jne zero
+ mov eax,1
+ ret
+ military:
+ mov eax,2
+ test edx,0x20000
+ jz no
+ or eax,4
+ no: ret
+ zero: xor eax,eax
+ ret
+ ''')
+ # Drop only overflow highlights; the native clear routine handles its 20 slots.
+ drop=emit(f'''
+ pushad
+ cmp dword ptr [{busy}],0
+ jne done
+ mov ebp,dword ptr [{count}]
+ mov dword ptr [{count}],0
+ mov esi,20
+ next:
+ cmp esi,ebp
+ jae done
+ mov ebx,dword ptr [{group}+esi*4]
+ test ebx,ebx
+ jz advance
+ push ebx
+ call 0x467140
+ add esp,4
+ test eax,eax
+ jz advance
+ movzx eax,bx
+ imul eax,eax,2308
+ mov byte ptr [eax+0x7ca6e8],0
+ advance: inc esi
+ jmp next
+ done: popad
+ ret
+ ''')
+ # Preserve original selection API and clear behaviour for manual selection.
+ hook(0x467250,10,f'call {drop}; push esi; mov word ptr [0xa6f070],0xffff; jmp 0x46725a')
+ hook(0x417a80,7,f'pushfd; cmp dword ptr [ecx+0x9c],0; jle dead; call {drop}; dead: popfd; push ecx; push ebx; push ebp; push esi; or esi,-1; jmp 0x417a87')
+ select=emit(f'''
+ pushad
+ mov ebp,eax
+ call 0x467250
+ call 0x425120
+ mov dword ptr [{busy}],1
+ xor ebx,ebx
+ mov esi,1
+ mov edi,0x7ca6e8+2308
+ scan:
+ call {classify}
+ test eax,ebp
+ jz advance
+ mov eax,dword ptr [edi+0x29c]
+ mov dword ptr [{group}+ebx*4],eax
+ cmp ebx,20
+ jae overflow
+ push 0
+ push 1
+ push esi
+ mov ecx,0x78d024
+ call 0x4633f0
+ jmp added
+ overflow: mov byte ptr [edi],1
+ added: inc ebx
+ advance:
+ inc esi
+ add edi,2308
+ cmp esi,1200
+ jb scan
+ mov dword ptr [{count}],ebx
+ mov dword ptr [{busy}],0
+ popad
+ ret
+ ''')
+ original_enqueue=emit('mov eax,ecx; mov cx,word ptr [eax+0x8d4]; jmp 0x42c499')
+ enqueue=emit(f'''
+ cmp dword ptr [{qcount}],0
+ jne buffer
+ cmp word ptr [ecx+0x8d4],5
+ jl native
+ buffer:
+ pushad
+ cmp dword ptr [{qcount}],256
+ jae done
+ mov eax,dword ptr [{qwrite}]
+ imul edi,eax,104
+ add edi,{queue}
+ lea esi,[esp+36]
+ mov ecx,26
+ cld
+ rep movsd dword ptr es:[edi],dword ptr [esi]
+ inc eax
+ and eax,255
+ mov dword ptr [{qwrite}],eax
+ inc dword ptr [{qcount}]
+ done: popad
+ ret 104
+ native: jmp {original_enqueue}
+ ''')
+ hook(0x42c490,9,f'jmp {enqueue}')
+ flush=emit(f'''
+ pushad
+ next:
+ cmp dword ptr [{qcount}],0
+ je done
+ cmp word ptr [0xa6e9a8+0x8d4],5
+ jge done
+ mov eax,dword ptr [{qread}]
+ imul esi,eax,104
+ add esi,{queue}
+ sub esp,104
+ mov edi,esp
+ mov ecx,26
+ cld
+ rep movsd dword ptr es:[edi],dword ptr [esi]
+ mov ecx,0xa6e9a8
+ call {original_enqueue}
+ inc dword ptr [{qread}]
+ and dword ptr [{qread}],255
+ dec dword ptr [{qcount}]
+ jmp next
+ done: popad
+ ret
+ ''')
+ refresh=emit(f'''
+ pushad
+ cmp dword ptr [{count}],0
+ je done
+ mov edi,0xa79580
+ xor eax,eax
+ mov ecx,20
+ cld
+ rep stosd dword ptr es:[edi],eax
+ xor esi,esi
+ xor ebp,ebp
+ scan:
+ cmp esi,dword ptr [{count}]
+ jae finish
+ mov ebx,dword ptr [{group}+esi*4]
+ test ebx,ebx
+ jz advance
+ push ebx
+ call 0x467140
+ add esp,4
+ test eax,eax
+ jz invalid
+ movzx eax,bx
+ imul edi,eax,2308
+ add edi,0x7ca6e8
+ movsx eax,byte ptr [edi+0x76]
+ cmp eax,dword ptr [0xcbdc3c]
+ jne unhighlight
+ cmp byte ptr [edi+0x324],1
+ jne unhighlight
+ cmp ebp,20
+ jae advance
+ mov dword ptr [0xa79580+ebp*4],ebx
+ inc ebp
+ jmp advance
+ unhighlight: mov byte ptr [edi],0
+ invalid: mov dword ptr [{group}+esi*4],0
+ advance: inc esi
+ jmp scan
+ finish:
+ mov dword ptr [0xa7957c],ebp
+ test ebp,ebp
+ jnz done
+ mov dword ptr [{count}],0
+ done: popad
+ ret
+ ''')
+ keyboard=emit(f'''
+ pushad
+ call {flush}
+ call {refresh}
+ xor ebx,ebx
+ cmp word ptr [0x78c928+0xbe*2],0
+ je key2
+ or ebx,1
+ key2: cmp word ptr [0x78c928+0xc0*2],0
+ je key3
+ or ebx,2
+ key3: cmp word ptr [0x78c928+9*2],0
+ je checked
+ or ebx,4
+ checked:
+ mov eax,dword ptr [{keys}]
+ mov dword ptr [{keys}],ebx
+ not eax
+ and eax,ebx
+ cmp dword ptr [0xb9022c],0
+ jne done
+ cmp word ptr [0xced900],0
+ jne done
+ cmp word ptr [0xced8fc],0
+ jne done
+ cmp dword ptr [0xced908],0
+ jne done
+ cmp dword ptr [0xced910],0
+ jne done
+ cmp dword ptr [0xd375c8],0
+ jne done
+ test eax,1
+ jz army
+ mov eax,1
+ call {select}
+ jmp done
+ army: test eax,2
+ jz hero
+ mov eax,2
+ call {select}
+ jmp done
+ hero: test eax,4
+ jz done
+ mov eax,4
+ call {select}
+ done: popad
+ ret
+ ''')
+ hook(0x46dff0,5,f'call {keyboard}; call 0x46d140; jmp 0x46dff5')
+ original_command=emit('sub esp,0xb8; jmp 0x435046')
+ # Keep the original 20-unit packet format and queue the same command for every batch.
+ command=emit(f'''
+ cmp dword ptr [esp],0x46ed15
+ jne native
+ cmp dword ptr [{count}],20
+ jbe native
+ cmp word ptr [0xa6f000],1
+ je native
+ pushad
+ mov ebp,esp
+ sub esp,80
+ mov edi,esp
+ mov esi,0xa79580
+ mov ecx,20
+ cld
+ rep movsd dword ptr es:[edi],dword ptr [esi]
+ xor ebx,ebx
+ batch:
+ mov edi,0xa79580
+ xor eax,eax
+ mov ecx,20
+ rep stosd dword ptr es:[edi],eax
+ mov edi,0xa79580
+ xor edx,edx
+ fill:
+ cmp ebx,dword ptr [{count}]
+ jae send
+ mov eax,dword ptr [{group}+ebx*4]
+ mov dword ptr [edi+edx*4],eax
+ inc ebx
+ inc edx
+ cmp edx,20
+ jb fill
+ send:
+ push dword ptr [ebp+52]
+ push dword ptr [ebp+48]
+ push dword ptr [ebp+44]
+ push dword ptr [ebp+40]
+ push dword ptr [ebp+36]
+ call {original_command}
+ add esp,20
+ cmp ebx,dword ptr [{count}]
+ jb batch
+ mov esi,esp
+ mov edi,0xa79580
+ mov ecx,20
+ rep movsd dword ptr es:[edi],dword ptr [esi]
+ add esp,80
+ popad
+ mov eax,1
+ ret
+ native: jmp {original_command}
+ ''')
+ hook(0x435040,6,f'jmp {command}')
+ # Right-align resources using exact icon/glyph widths and current digit counts.
+ layout=emit(f'''
+ pushad
+ mov eax,dword ptr [ebp+0x14]
+ call digits
+ mov ebx,ecx
+ mov eax,dword ptr [ebp+0x18]
+ call digits
+ add ebx,ecx
+ movsx eax,word ptr [ebp+0x1b5c]
+ add eax,dword ptr [ebp+0x1c]
+ call digits
+ add ebx,ecx
+ movsx eax,word ptr [ebp+0x1b62]
+ call digits
+ add ebx,ecx
+ inc ebx
+ push 0x21
+ call 0x469c10
+ add esp,4
+ imul ebx,eax
+ push 0x23
+ call 0x469c10
+ add esp,4
+ imul eax,eax,3
+ add ebx,eax
+ add ebx,20
+ mov eax,{W-4}
+ sub eax,ebx
+ mov dword ptr [{origin}],eax
+ popad
+ ret
+ digits: xor ecx,ecx
+ mov esi,10
+ test eax,eax
+ jns digit
+ neg eax
+ inc ecx
+ digit: inc ecx
+ xor edx,edx
+ div esi
+ test eax,eax
+ jne digit
+ ret
+ ''')
+ hook(0x48b87c,6,f'call {layout}; push 0x21; mov dword ptr [esp+0x18],ebp; jmp 0x48b882')
+ hook(0x48b896,5,f'push dword ptr [{origin}]; jmp 0x48b89b')
+ hook(0x48b8b9,6,f'add esi,dword ptr [{origin}]; jmp 0x48b8bf')
+ counter=emit(f'''
+ pushad
+ xor ebx,ebx
+ mov esi,1
+ mov edi,0x7ca6e8+2308
+ scan: call {classify}
+ and eax,1
+ add ebx,eax
+ inc esi
+ add edi,2308
+ cmp esi,1200
+ jb scan
+ mov dword ptr [{idle}],ebx
+ push ebx
+ push {fmt}
+ push {txt}
+ call dword ptr [0x4d021c]
+ add esp,12
+ popad
+ ret
+ ''')
+ # Draw via the same game-selected Korean font, without modifying existing hint state.
+ draw=emit(f'''
+ pushad
+ call {counter}
+ sub esp,8
+ mov edi,dword ptr [0x65181c]
+ lea eax,[esp]
+ push eax
+ push edi
+ mov edx,dword ptr [edi]
+ call dword ptr [edx+0x44]
+ test eax,eax
+ jne finish
+ mov ebx,dword ptr [esp]
+ push dword ptr [0xcecc30]
+ push ebx
+ call dword ptr [0x4d0034]
+ mov dword ptr [esp+4],eax
+ push 0xffffff
+ push ebx
+ call dword ptr [0x4d0030]
+ push 1
+ push ebx
+ call dword ptr [0x4d0044]
+ push {txt}
+ call dword ptr [0x4d00d4]
+ push eax
+ push {txt}
+ push 7
+ push 6
+ push ebx
+ call dword ptr [0x4d0028]
+ push dword ptr [esp+4]
+ push ebx
+ call dword ptr [0x4d0034]
+ push ebx
+ push edi
+ mov edx,dword ptr [edi]
+ call dword ptr [edx+0x68]
+ finish: add esp,8
+ popad
+ ret
+ ''')
+ hook(0x46c332,5,f'call 0x4315d0; call {draw}; jmp 0x46c337')
+ # Battle initialization discards handles from a previous battle without dereferencing them.
+ hook(0x46afd0,5,f'mov dword ptr [{qcount}],0; mov dword ptr [{qread}],0; mov dword ptr [{qwrite}],0; mov dword ptr [{count}],0; mov dword ptr [{busy}],0; mov dword ptr [{keys}],0; pushad; cmp dword ptr [0x115e2f8],4; je ready; call 0x41c9a0; push 4; mov ecx,0x115e2f8; call 0x4af6a0; mov ecx,0x115e2f8; call 0x4b0250; call 0x41c670; ready: popad; mov ecx,0xcbce78; jmp 0x46afd5')
+ return dict(classify=classify,select=select,keyboard=keyboard,command=command,original_command=original_command,drop=drop,counter=counter,draw=draw,layout=layout,origin=origin,idle=idle,count=count,busy=busy,keys=keys,group=group,text=txt,enqueue=enqueue,original_enqueue=original_enqueue,flush=flush,qcount=qcount,qread=qread,qwrite=qwrite,queue=queue,refresh=refresh)
