@@ -23,11 +23,11 @@ jobs:
             dist/MythLauncher.zip.sha256
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/v')
-        shell: powershell
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version=[regex]::Match((Get-Content src/Core.cs -Raw),'Version="([^"]+)"').Groups[1].Value
           if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag/source version mismatch' }
-          gh release create $env:GITHUB_REF_NAME dist/MythLauncher.exe dist/MythLauncher.zip dist/MythLauncher.zip.sha256 --title "천년의신화 런처 $version" --notes-file PATCHNOTES.md --verify-tag
+          gh release create $env:GITHUB_REF_NAME dist/MythLauncher.exe dist/MythLauncher.zip dist/MythLauncher.zip.sha256 --title "1000year Launcher $version" --notes-file PATCHNOTES.md --verify-tag
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }

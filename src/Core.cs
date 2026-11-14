@@ -9,7 +9,7 @@ namespace Myth {
  public sealed class Recipe { public string SourceSHA256,OutputSHA256,AppendHex; public Edit[] Edits; }
  public sealed class Settings { public string GameDirectory=""; public int Mode=2; public bool Fullscreen=false; public bool AutoUpdate=true; }
  public static class Core {
-  public const string Version="0.2.0";
+  public const string Version="0.2.1";
   public static string Home=AppDomain.CurrentDomain.BaseDirectory;
   public static string UserHome=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"1000year");
   public static string Hash(string path) {using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
