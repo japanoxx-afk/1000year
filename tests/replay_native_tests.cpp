@@ -26,11 +26,12 @@ int main(){
   capture(&p,player);
  }
  assert(commands.size()==8);
+ for(auto& c:commands)mem<uint16_t>((uintptr_t)c.packet.bytes)=352;
  playback=true;frame.before.tick=240;
  prepareCommands();assert(!failed);
  for(unsigned player=0;player<8;++player){
   uintptr_t q=0xa6f280+player*50*104;
-  assert(mem<uint16_t>(q)==3&&mem<uint32_t>(q+4)==player+50);
+  assert(mem<uint16_t>(q)==352&&mem<uint32_t>(q+4)==player+50);
   assert(mem<uint32_t>(q+16)==239&&mem<uint32_t>(q+22)==0x12340078);
   assert(mem<uint16_t>(q+104)==0);
  }

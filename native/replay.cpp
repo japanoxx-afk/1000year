@@ -160,7 +160,7 @@ void __cdecl prepareCommands(){
  unsigned used[8]{};
  for(auto& c:commands){
   uint16_t kind=mem<uint16_t>((uintptr_t)c.packet.bytes),count=mem<uint16_t>((uintptr_t)c.packet.bytes+20);
-  if(c.player>=8||used[c.player]>=50||kind<1||kind>179||count>20){fail("ERROR: invalid player queue");return;}
+  if(c.player>=8||used[c.player]>=50||kind<1||kind>363||count>20){fail("ERROR: invalid player queue");return;}
   for(unsigned i=0;i<count;++i){auto id=mem<uint16_t>((uintptr_t)c.packet.bytes+22+4*i);if(id<1||id>1199){fail("ERROR: invalid unit handle");return;}}
   auto target=(Packet*)(0xa6f280+(c.player*50+used[c.player]++)*104);
   *target=c.packet;

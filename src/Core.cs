@@ -9,7 +9,7 @@ namespace Myth {
  public sealed class Recipe { public string SourceSHA256,OutputSHA256,AppendHex; public Edit[] Edits; }
  public sealed class Settings { public string GameDirectory=""; public int Mode=3; public bool Fullscreen=false; public bool AutoUpdate=true; public bool RecordReplay=true; }
  public static class Core {
-  public const string Version="0.6.1";
+  public const string Version="0.6.2";
   public static string Home=AppDomain.CurrentDomain.BaseDirectory;
   public static string UserHome=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"1000year");
   public static string Hash(string path) {using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -26,10 +26,11 @@ namespace Myth {
    if(HashBytes(result)!=r.OutputSHA256)throw new IOException("패치 결과 검증 실패");return result;
   }
   public static byte[] Resource(string name) {using(var s=typeof(Core).Assembly.GetManifestResourceStream(name)){if(s==null)throw new IOException("구성 파일 누락: "+name);using(var m=new MemoryStream()){s.CopyTo(m);return m.ToArray();}}}
-  public static string Prepare(string directory,int mode,bool fullscreen) {
+  public static string Prepare(string directory,int mode,bool fullscreen,string replayPatchHash=null) {
    if(mode<0 || mode>3)throw new IOException("지원하지 않는 해상도 설정입니다.");
    directory=Path.GetFullPath(directory);string source=Path.Combine(directory,"MMyth.exe");if(!File.Exists(source)||!Directory.Exists(Path.Combine(directory,"tile")))throw new IOException("MMyth.exe와 tile 폴더가 있는 게임 폴더를 선택하세요.");
-   var recipe=new JavaScriptSerializer().Deserialize<Recipe>(System.Text.Encoding.UTF8.GetString(Resource(mode==3?"Myth.WideRecipe":mode==2?"Myth.HDRecipe":"Myth.PortableRecipe")));
+   bool legacy=mode==3&&replayPatchHash=="2add14efd120cdfacfc6318e4107d4ad496a352f787311b9c0b9b15082438606";
+   var recipe=new JavaScriptSerializer().Deserialize<Recipe>(System.Text.Encoding.UTF8.GetString(Resource(legacy?"Myth.LegacyWide060":mode==3?"Myth.WideRecipe":mode==2?"Myth.HDRecipe":"Myth.PortableRecipe")));
    byte[] patched=Patch(File.ReadAllBytes(source),recipe);
    string target=Path.Combine(directory,mode==3?"MMyth.Wide.exe":mode==2?"MMyth.HD.exe":"MMyth.Portable.exe");
    File.WriteAllBytes(target+".partial",patched);if(File.Exists(target))File.Delete(target);File.Move(target+".partial",target);

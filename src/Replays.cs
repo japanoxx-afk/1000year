@@ -20,17 +20,26 @@ namespace Myth {
   public static void Watch(int pid,string session){try{
    string allowed=Path.GetFullPath(Path.Combine(Core.UserHome,"R"))+Path.DirectorySeparatorChar;session=Path.GetFullPath(session);
    if(!session.StartsWith(allowed,StringComparison.OrdinalIgnoreCase))throw new IOException("리플레이 세션 경로 오류");
-   try{using(var p=Process.GetProcessById(pid)){if(!p.ProcessName.StartsWith("MMyth",StringComparison.OrdinalIgnoreCase))throw new IOException("리플레이 게임 프로세스 오류");p.WaitForExit();}}catch(ArgumentException){}
+   try{using(var p=Process.GetProcessById(pid)){if(!p.ProcessName.StartsWith("MMyth",StringComparison.OrdinalIgnoreCase))throw new IOException("리플레이 게임 프로세스 오류");while(!p.WaitForExit(500)){string f=Path.Combine(session,"status.txt");if(File.Exists(f)&&File.ReadAllText(f)=="COMPLETE")break;}}}catch(ArgumentException){}
+   Publish(session);
+  }catch(Exception ex){Core.Log("리플레이 저장 확인 필요: "+ex);}}
+  public static string Publish(string session){
+   string allowed=Path.GetFullPath(Path.Combine(Core.UserHome,"R"))+Path.DirectorySeparatorChar;session=Path.GetFullPath(session);
+   if(!session.StartsWith(allowed,StringComparison.OrdinalIgnoreCase))throw new IOException("리플레이 세션 경로 오류");
+   using(var publishLock=new FileStream(Path.Combine(session,"publish.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None)){
    string status=Path.Combine(session,"status.txt");if(!File.Exists(status)||File.ReadAllText(status)!="COMPLETE")throw new IOException("정상 종료되지 않은 기록을 보존했습니다: "+session);
    var info=new JavaScriptSerializer().Deserialize<ReplayInfo>(File.ReadAllText(Path.Combine(session,"identity.json")));
-   Directory.CreateDirectory(Library);string target=Path.Combine(Library,DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N").Substring(0,6)+".mythreplay");
-   ReplayArchive.Create(target,session,info);Core.Log("리플레이 저장 완료: "+target);
-  }catch(Exception ex){Core.Log("리플레이 저장 확인 필요: "+ex);}}
+   Directory.CreateDirectory(Library);string target=Path.Combine(Library,DateTime.Parse(info.RecordedAt).ToLocalTime().ToString("yyyyMMdd-HHmmss")+"-"+Path.GetFileName(session)+".mythreplay");
+   if(File.Exists(target)){var existing=ReplayArchive.Read(target,null);if(existing.CommandsSHA256!=Core.Hash(Path.Combine(session,"commands.partial")))throw new IOException("기존 리플레이와 기록이 다릅니다.");return target;}
+   ReplayArchive.Create(target,session,info);Core.Log("리플레이 저장 완료: "+target);return target;
+   }
+  }
+  public static void Recover(){string root=Path.Combine(Core.UserHome,"R");if(!Directory.Exists(root))return;foreach(string session in Directory.GetDirectories(root)){try{string status=Path.Combine(session,"status.txt");if(File.Exists(status)&&File.ReadAllText(status)=="COMPLETE")Publish(session);}catch(Exception ex){Core.Log("리플레이 복구 확인 필요: "+ex.Message);}}}
   public static void Play(string file,string directory,bool fullscreen){
    if(Core.GameRunning(directory))throw new IOException("게임을 종료한 뒤 리플레이를 재생하세요.");
    string session=Session();ReplayInfo info=ReplayArchive.Read(file,session);string engine=Engine();
-   string exe=Core.Prepare(directory,info.Mode,fullscreen);
-   if(Core.Hash(Path.Combine(directory,"MMyth.exe"))!=info.GameSHA256||Core.Hash(exe)!=info.PatchSHA256||Core.Hash(engine)!=info.EngineSHA256)throw new IOException("현재 게임·패치·리플레이 엔진 버전이 기록과 다릅니다.");
+   string exe=Core.Prepare(directory,info.Mode,fullscreen,info.PatchSHA256);
+   if(Core.Hash(Path.Combine(directory,"MMyth.exe"))!=info.GameSHA256||Core.Hash(exe)!=info.PatchSHA256||info.Rules!=1)throw new IOException("현재 게임·패치·리플레이 규칙이 기록과 다릅니다.");
    var process=ReplayProcess.Start(exe,engine,session,true);
    new ReplayControls(process,session,info).Show();
   }
@@ -43,7 +52,7 @@ namespace Myth {
    var play=new Button{Text="재생",Bounds=new Rectangle(20,350,170,40)};Controls.Add(play);
    var open=new Button{Text="파일 열기",Bounds=new Rectangle(210,350,170,40)};Controls.Add(open);
    var folder=new Button{Text="저장 폴더",Bounds=new Rectangle(400,350,170,40)};Controls.Add(folder);
-   Directory.CreateDirectory(Replays.Library);var files=Directory.GetFiles(Replays.Library,"*.mythreplay");Array.Sort(files);Array.Reverse(files);list.Items.AddRange(files);
+   Replays.Recover();Directory.CreateDirectory(Replays.Library);var files=Directory.GetFiles(Replays.Library,"*.mythreplay");Array.Sort(files);Array.Reverse(files);list.Items.AddRange(files);
    list.Format+=(s,e)=>e.Value=Path.GetFileName(Convert.ToString(e.ListItem));list.FormattingEnabled=true;
    list.SelectedIndexChanged+=(s,e)=>{try{var i=ReplayArchive.Read((string)list.SelectedItem,null);detail.Text=DateTime.Parse(i.RecordedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")+"\r\n"+((long)(i.LastTick-i.FirstTick)*i.TickMilliseconds/1000)+"초 · 명령 플레이어 "+i.Players.Length+"명";}catch(Exception ex){detail.Text=ex.Message;}};
    play.Click+=(s,e)=>{if(list.SelectedItem!=null)Start((string)list.SelectedItem);};

@@ -13,7 +13,7 @@ namespace Myth {
   [STAThread] static void Main(string[] args) {if(args.Length==3&&args[0]=="--replay-watch"){Replays.Watch(Int32.Parse(args[1]),args[2]);return;}SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);bool created;using(var mutex=new Mutex(true,"Local\\1000year-Launcher",out created)){if(!created){MessageBox.Show("런처가 이미 실행 중입니다.");return;}Application.Run(new Launcher());}}
  }
  public sealed class Launcher:Form {
-  Settings settings=Core.Load();TextBox path;ComboBox mode;CheckBox full,auto,record;Label status;Button play,update,replays;bool busy;CancellationTokenSource stop=new CancellationTokenSource();
+  Settings settings=Core.Load();TextBox path;ComboBox mode;CheckBox full,auto,record;Label status;Button play,update,replays;bool busy;FileSystemWatcher replayWatcher;CancellationTokenSource stop=new CancellationTokenSource();
   public Launcher() {
    Text="천년의신화 런처 · "+Core.Version;ClientSize=new Size(720,540);MinimumSize=Size;MaximumSize=Size;StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(23,29,35);ForeColor=Color.FromArgb(236,229,214);Font=new Font("맑은 고딕",10);
    Controls.Add(new Label{Text="천년의신화",Font=new Font("맑은 고딕",27,FontStyle.Bold),Location=new Point(30,22),Size=new Size(480,58)});
@@ -33,7 +33,8 @@ namespace Myth {
    record=new CheckBox{Text="경기 리플레이 기록",Location=new Point(34,402),Size=new Size(300,30),Checked=settings.RecordReplay};Controls.Add(record);
    replays=Button("리플레이 목록",438,399,250);replays.Click+=(s,e)=>new ReplayLibrary(path.Text,full.Checked).Show(this);
    status=new Label{Text="단축키: . 쉬는 일꾼 / ` 군사 유닛 / Tab 영웅 전체 선택",Location=new Point(34,460),Size=new Size(654,65),ForeColor=Color.FromArgb(189,198,205)};Controls.Add(status);
-   Shown+=async(s,e)=>{if(auto.Checked)await CheckUpdate();};FormClosing+=(s,e)=>{if(busy){e.Cancel=true;return;}Save();stop.Cancel();};
+   Directory.CreateDirectory(Replays.Library);replayWatcher=new FileSystemWatcher(Replays.Library,"*.mythreplay");replayWatcher.Created+=(s,e)=>{if(!IsDisposed&&IsHandleCreated)try{BeginInvoke((Action)(()=>Say("리플레이 자동 저장 완료: "+e.Name)));}catch(InvalidOperationException){}};replayWatcher.EnableRaisingEvents=true;
+   Shown+=async(s,e)=>{await Task.Run(()=>Replays.Recover());if(!IsDisposed&&auto.Checked)await CheckUpdate();};FormClosing+=(s,e)=>{if(busy){e.Cancel=true;return;}Save();stop.Cancel();replayWatcher.Dispose();};
   }
   Button Button(string text,int x,int y,int width) {var b=new Button{Text=text,Location=new Point(x,y),Size=new Size(width,34),FlatStyle=FlatStyle.Flat,BackColor=Color.FromArgb(44,54,64),ForeColor=ForeColor};Controls.Add(b);return b;}
   void Save(){settings.GameDirectory=path.Text;settings.Mode=mode.SelectedIndex;settings.Fullscreen=full.Checked;settings.AutoUpdate=auto.Checked;settings.RecordReplay=record.Checked;try{Core.Save(settings);}catch(Exception ex){Core.Log(ex.ToString());}}

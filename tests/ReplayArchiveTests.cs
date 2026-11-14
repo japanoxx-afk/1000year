@@ -11,6 +11,8 @@ class ReplayArchiveTests {
    byte[] commands;using(var m=new MemoryStream())using(var w=new BinaryWriter(m)){w.Write(System.Text.Encoding.ASCII.GetBytes("MYTHRP01"));w.Write(1u);foreach(uint v in new uint[]{0,123,8,456,1,789,8,654,1,8})w.Write(v);
     for(int player=0;player<8;player++){w.Write(player);byte[] p=new byte[104];Buffer.BlockCopy(BitConverter.GetBytes((ushort)3),0,p,0,2);Buffer.BlockCopy(BitConverter.GetBytes((ushort)player),0,p,12,2);Buffer.BlockCopy(BitConverter.GetBytes((ushort)1),0,p,20,2);Buffer.BlockCopy(BitConverter.GetBytes(0x12340001),0,p,22,4);w.Write(p);}w.Write(UInt32.MaxValue);commands=m.ToArray();}
    var stats=ReplayArchive.InspectCommands(commands);Check(stats.Frames==1&&stats.Players.SequenceEqual(Enumerable.Range(0,8)),"eight players");
+   foreach(ushort command in new ushort[]{179,180,244,352,353,363}){byte[] higher=(byte[])commands.Clone();Buffer.BlockCopy(BitConverter.GetBytes(command),0,higher,56,2);Check(ReplayArchive.InspectCommands(higher).Frames==1,"native high command "+command);}
+   byte[] outside=(byte[])commands.Clone();Buffer.BlockCopy(BitConverter.GetBytes((ushort)364),0,outside,56,2);Reject(()=>ReplayArchive.InspectCommands(outside),"native command table end");
    Reject(()=>ReplayArchive.InspectCommands(commands.Take(commands.Length-1).ToArray()),"truncated seal");
    byte[] bad=(byte[])commands.Clone();bad[52]=8;Reject(()=>ReplayArchive.InspectCommands(bad),"player bounds");
    bad=(byte[])commands.Clone();bad[76]=21;Reject(()=>ReplayArchive.InspectCommands(bad),"selection bounds");
