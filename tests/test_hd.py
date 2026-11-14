@@ -93,3 +93,20 @@ assert run(0x431687,(0,0,123),stop=0x43169b)==0
 assert seen==[(123,50,H-35,0x601000,4)],seen
 u.hook_del(hook)
 print('PASS original left-aligned hint and GDI call stack:',name)
+
+# Execute the full bottom-bar renderer and capture its DirectDraw destination.
+blit=0x209200;surface=0x602000;vtable=0x602100;player=0x602200
+put(0x65181c,surface);put(surface,vtable);put(vtable+0x1c,blit)
+put(player+8,10000);put(0x651510,0x603000)
+u.mem_write(blit,bytes.fromhex('31c0c21800'))
+bar=[]
+def capture_bar(uc,address,size,data):
+ if address==blit:
+  sp=uc.reg_read(UC_X86_REG_ESP)
+  bar.append(struct.unpack('<IIIIII',uc.mem_read(sp+4,24)))
+hook=u.hook_add(UC_HOOK_CODE,capture_bar)
+assert run(0x48b810,ecx=player)==4
+u.hook_del(hook)
+assert len(bar)==1 and bar[0][:4]==(surface,DX+6,H-12,0x603000),bar
+assert bar[0][5]==0x11
+print('PASS bottom red bar follows the lower-right HUD in both axes:',name)

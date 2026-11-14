@@ -86,6 +86,7 @@ hook(0x46afd0,5,'pushad; cmp dword ptr [0x115e2f8],4; je ready; call 0x41c9a0; p
 d(0x447a4f,373+DY,'day-night dial y')
 d(0x447a54,593+DX,'day-night dial x')
 d(0x48b862,H-12,'bottom resource bar y')
+hook(0x48b866,6,f'push {DX+6}; push eax; call dword ptr [ecx+0x1c]; jmp 0x48b86c')
 d(0x43168e,H-35,'bottom tooltip text y')
 # Mini-map camera footprint scales with the world viewport, keeping map projection unchanged.
 hook(0x49d702,7,f'imul eax,eax,{VW}; xor edx,edx; mov ecx,512; div ecx; mov word ptr [esi+0x2284c],ax; jmp 0x49d709')
