@@ -1,12 +1,24 @@
 using System;
 using System.IO;
 using System.Diagnostics;
+using System.Linq;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Web.Script.Serialization;
 namespace Myth {
  public static class Replays {
   public static string Library=Path.Combine(Core.UserHome,"Replays");
+  public static string[] LibraryFiles(string game){
+   var files=new List<string>();var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+   foreach(string dir in new[]{Library,Path.Combine(Path.GetFullPath(game),"Replays")}.Distinct(StringComparer.OrdinalIgnoreCase)){
+    if(!Directory.Exists(dir))continue;
+    try{foreach(string file in Directory.GetFiles(dir)){if(!String.Equals(Path.GetExtension(file),".mythreplay",StringComparison.OrdinalIgnoreCase))continue;
+     string key;try{key=Core.Hash(file);}catch(IOException){key=Path.GetFullPath(file);}catch(UnauthorizedAccessException){key=Path.GetFullPath(file);}
+     if(seen.Add(key))files.Add(file);
+    }}catch(IOException ex){Core.Log("리플레이 목록 확인 필요: "+dir+" · "+ex.Message);}catch(UnauthorizedAccessException ex){Core.Log("리플레이 목록 확인 필요: "+dir+" · "+ex.Message);}
+   }return files.OrderByDescending(Path.GetFileName,StringComparer.OrdinalIgnoreCase).ToArray();
+  }
   static string Session(){string dir=Path.Combine(Core.UserHome,"R",Guid.NewGuid().ToString("N").Substring(0,12));Directory.CreateDirectory(dir);return dir;}
   static string Engine(){byte[] bytes=Core.Resource("Myth.ReplayEngine");string dir=Path.Combine(Core.UserHome,"Engine",Core.HashBytes(bytes).Substring(0,12));Directory.CreateDirectory(dir);string path=Path.Combine(dir,"MythReplay.dll");if(!File.Exists(path)||Core.Hash(path)!=Core.HashBytes(bytes))File.WriteAllBytes(path,bytes);return path;}
   public static Process Record(string executable,int mode,Action<string> notice){
@@ -34,7 +46,7 @@ namespace Myth {
    ReplayArchive.Create(target,session,info);Core.Log("리플레이 저장 완료: "+target);return target;
    }
   }
-  public static void Recover(){string root=Path.Combine(Core.UserHome,"R");if(!Directory.Exists(root))return;foreach(string session in Directory.GetDirectories(root)){try{string status=Path.Combine(session,"status.txt");if(File.Exists(status)&&File.ReadAllText(status)=="COMPLETE")Publish(session);}catch(Exception ex){Core.Log("리플레이 복구 확인 필요: "+ex.Message);}}}
+  public static void Recover(){string root=Path.Combine(Core.UserHome,"R");if(!Directory.Exists(root))return;foreach(string session in Directory.GetDirectories(root)){try{string status=Path.Combine(session,"status.txt");if(File.Exists(Path.Combine(session,"identity.json"))&&File.Exists(Path.Combine(session,"commands.partial"))&&File.Exists(status)&&File.ReadAllText(status)=="COMPLETE")Publish(session);}catch(Exception ex){Core.Log("리플레이 복구 확인 필요: "+ex.Message);}}}
   public static ReplayControls Play(string file,string directory,bool fullscreen,bool show=true){
    if(Core.GameRunning(directory))throw new IOException("게임을 종료한 뒤 리플레이를 재생하세요.");
    string session=Session();ReplayInfo info=ReplayArchive.Read(file,session);string engine=Engine();
@@ -45,21 +57,34 @@ namespace Myth {
   }
  }
  public sealed class ReplayLibrary:Form {
-  ListBox list=new ListBox();Label detail=new Label();string directory;bool fullscreen;
+  ListBox list=new ListBox();Label detail=new Label(),location=new Label();Timer refreshTimer=new Timer();string directory;bool fullscreen;string[] listed=new string[0];
   public ReplayLibrary(string game,bool full){
-   directory=game;fullscreen=full;Text="천년의신화 리플레이";ClientSize=new Size(660,420);StartPosition=FormStartPosition.CenterParent;Font=new Font("맑은 고딕",10);
-   list.SetBounds(20,20,620,240);Controls.Add(list);detail.SetBounds(20,272,620,65);Controls.Add(detail);
-   var play=new Button{Text="재생",Bounds=new Rectangle(20,350,170,40)};Controls.Add(play);
-   var open=new Button{Text="파일 열기",Bounds=new Rectangle(210,350,170,40)};Controls.Add(open);
-   var folder=new Button{Text="저장 폴더",Bounds=new Rectangle(400,350,170,40)};Controls.Add(folder);
-   Replays.Recover();Directory.CreateDirectory(Replays.Library);var files=Directory.GetFiles(Replays.Library,"*.mythreplay");Array.Sort(files);Array.Reverse(files);list.Items.AddRange(files);
+   directory=game;fullscreen=full;Text="천년의신화 리플레이";ClientSize=new Size(760,440);StartPosition=FormStartPosition.CenterParent;Font=new Font("맑은 고딕",10);
+   list.SetBounds(20,20,720,220);Controls.Add(list);location.SetBounds(20,250,720,45);Controls.Add(location);detail.SetBounds(20,300,720,55);Controls.Add(detail);
+   var play=new Button{Text="재생",Bounds=new Rectangle(20,380,160,40)};Controls.Add(play);
+   var open=new Button{Text="파일 열기",Bounds=new Rectangle(195,380,160,40)};Controls.Add(open);
+   var folder=new Button{Text="저장 폴더",Bounds=new Rectangle(370,380,160,40)};Controls.Add(folder);
+   var refresh=new Button{Text="새로고침",Bounds=new Rectangle(545,380,160,40)};Controls.Add(refresh);
+   refresh.Click+=(s,e)=>RefreshLibrary(true);
+   Directory.CreateDirectory(Replays.Library);
    list.Format+=(s,e)=>e.Value=Path.GetFileName(Convert.ToString(e.ListItem));list.FormattingEnabled=true;
    list.SelectedIndexChanged+=(s,e)=>{try{var i=ReplayArchive.Read((string)list.SelectedItem,null);detail.Text=DateTime.Parse(i.RecordedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")+"\r\n"+((long)(i.LastTick-i.FirstTick)*i.TickMilliseconds/1000)+"초 · 명령 플레이어 "+i.Players.Length+"명";}catch(Exception ex){detail.Text=ex.Message;}};
    play.Click+=(s,e)=>{if(list.SelectedItem!=null)Start((string)list.SelectedItem);};
    list.DoubleClick+=(s,e)=>{if(list.SelectedItem!=null)Start((string)list.SelectedItem);};
    open.Click+=(s,e)=>{using(var d=new OpenFileDialog{Filter="천년의신화 리플레이|*.mythreplay",InitialDirectory=Replays.Library})if(d.ShowDialog(this)==DialogResult.OK)Start(d.FileName);};
    folder.Click+=(s,e)=>Process.Start(new ProcessStartInfo(Replays.Library){UseShellExecute=true});
-   if(list.Items.Count>0)list.SelectedIndex=0;else detail.Text="기록한 경기가 없습니다. 리플레이 기록을 켜고 게임을 시작하세요.";
+   RefreshLibrary(true);refreshTimer.Interval=2000;refreshTimer.Tick+=(s,e)=>RefreshLibrary(false);refreshTimer.Start();
+   Activated+=(s,e)=>RefreshLibrary(false);FormClosed+=(s,e)=>refreshTimer.Dispose();
+  }
+  public void RefreshLibrary(bool recover){
+   try{
+    if(recover)Replays.Recover();string[] files=Replays.LibraryFiles(directory);
+    location.Text="저장된 리플레이 "+files.Length+"개 · 자동 갱신\r\n"+Replays.Library;
+    if(!listed.SequenceEqual(files,StringComparer.OrdinalIgnoreCase)){
+     string selected=list.SelectedItem as string;list.BeginUpdate();try{list.Items.Clear();list.Items.AddRange(files);listed=files;int index=selected==null?-1:Array.FindIndex(files,f=>String.Equals(f,selected,StringComparison.OrdinalIgnoreCase));if(files.Length>0)list.SelectedIndex=index<0?0:index;}finally{list.EndUpdate();}
+    }
+    if(files.Length==0)detail.Text="이 저장 폴더와 게임 폴더의 Replays에서 기록을 찾지 못했습니다. 파일 열기로 다른 위치의 기록을 선택할 수 있습니다.";
+   }catch(Exception ex){detail.Text="목록을 갱신하지 못했습니다: "+ex.Message;Core.Log(detail.Text);}
   }
   void Start(string file){try{Replays.Play(file,directory,fullscreen);}catch(Exception ex){MessageBox.Show(this,ex.Message,"재생 실패");}}
  }

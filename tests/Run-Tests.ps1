@@ -12,6 +12,10 @@ if($LASTEXITCODE -ne 0){throw 'Core tests failed'}
 if($LASTEXITCODE -ne 0){throw 'Replay test compilation failed'}
 & .tools\ReplayArchiveTests.exe
 if($LASTEXITCODE -ne 0){throw 'Replay archive tests failed'}
+& "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" /nologo /platform:x86 /codepage:65001 /reference:System.Web.Extensions.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:.tools\ReplayLibraryTests.exe tests\ReplayLibraryTests.cs src\Replays.cs src\ReplayArchive.cs src\ReplayProcess.cs src\Core.cs
+if($LASTEXITCODE -ne 0){throw 'Replay library test compilation failed'}
+& .tools\ReplayLibraryTests.exe
+if($LASTEXITCODE -ne 0){throw 'Replay library tests failed'}
 & tests\run-replay-native.cmd
 if($LASTEXITCODE -ne 0){throw 'Native replay tests failed'}
 & scripts\build.ps1
