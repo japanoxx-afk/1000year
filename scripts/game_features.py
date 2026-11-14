@@ -55,8 +55,15 @@ def install(g):
  cmp eax,4; je worker; cmp eax,7; je worker;
  cmp eax,20; je worker; cmp eax,21; je worker;
  cmp eax,23; je worker; cmp eax,31; jne move;
- worker: push dword ptr [esp+44]; push dword ptr [esp+44];
- mov ecx,0xca5598; call 0x42e260; test eax,eax; jz move;
+ worker: movsx eax,word ptr [esp+40]; movsx edx,word ptr [esp+44];
+ test eax,eax; js move; test edx,edx; js move;
+ cmp ax,word ptr [0xca5624]; jge move;
+ cmp dx,word ptr [0xca5626]; jge move;
+ mov ecx,dword ptr [0xcaa268]; test ecx,ecx; jz move;
+ mov edx,dword ptr [edx*4+0xca98f4]; add edx,eax;
+ movzx eax,byte ptr [ecx+edx]; push eax;
+ movzx eax,word ptr [edi+0x29c]; push eax;
+ call 0x475230; add esp,8; cmp eax,1; jne move;
  popad;
  push 0; push dword ptr [esp+20]; push dword ptr [0xb90224];
  mov eax,dword ptr [esp+24]; shl eax,16;
@@ -393,7 +400,20 @@ def install(g):
  ''')
  hook(0x435040,6,f'jmp {command}')
  # Right-align resources using exact icon/glyph widths and current digit counts.
+ clear_resources=emit(f'''
+ pushad; mov ebx,dword ptr [0x65181c]; test ebx,ebx; jz done;
+ sub esp,116; mov edi,esp; xor eax,eax; mov ecx,29; cld;
+ rep stosd dword ptr es:[edi],eax;
+ mov dword ptr [esp],100;
+ mov dword ptr [esp+100],{max(0,W-512)};
+ mov dword ptr [esp+108],{W}; mov dword ptr [esp+112],28;
+ mov eax,esp; lea edx,[esp+100]; push eax; push 0x1000400;
+ push 0; push 0; push edx; push ebx; mov eax,dword ptr [ebx];
+ call dword ptr [eax+0x14]; add esp,116;
+ done: popad; ret
+ ''')
  layout=emit(f'''
+ call {clear_resources}
  pushad
  mov eax,dword ptr [ebp+0x14]
  call digits

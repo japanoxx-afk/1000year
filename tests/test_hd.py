@@ -112,3 +112,16 @@ u.hook_del(hook)
 assert len(bar)==1 and bar[0][:4]==(surface,DX+6,H-12,0x603000),bar
 assert bar[0][5]==0x11
 print('PASS bottom red bar follows the lower-right HUD in both axes:',name)
+# Changing resource digit counts must not leave old digits on the back buffer.
+put(vtable+0x14,blit);clears=[]
+def capture_clear(uc,address,size,data):
+ if address==blit:
+  sp=uc.reg_read(UC_X86_REG_ESP)
+  target,rect,src,srcrect,flags,fx=struct.unpack('<6I',uc.mem_read(sp+4,24))
+  clears.append((target,struct.unpack('<4I',uc.mem_read(rect,16)),src,srcrect,flags,struct.unpack('<I',uc.mem_read(fx,4))[0]))
+h=u.hook_add(UC_HOOK_CODE,capture_clear)
+u.reg_write(UC_X86_REG_EBP,player)
+assert run(r['Features']['layout'])==4
+assert clears==[(surface,(max(0,W-512),0,W,28),0,0,0x1000400,100)],clears
+u.hook_del(h)
+print('PASS resource region is cleared before changing-width digits are redrawn:',name)

@@ -8,7 +8,7 @@ def word(a,v):u.mem_write(a,struct.pack('<H',v))
 def unit(i,flags=0x3001,owner=0,order=1,pending=1,hp=240,visible=1,queue=0,moving=0,typeid=7):
  a=0x7ca6e8+i*2308;u.mem_write(a,bytes(2308));word(0xa79620+i*2,typeid)
  u.mem_write(a+0x75,bytes([typeid]))
- u.mem_write(a+0x76,bytes([owner]));put(a+0x9c,hp);put(a+0x1d8,flags)
+ u.mem_write(a+0x76,bytes([owner]));put(a+0x9c,hp);put(a+0x1d8,flags);put(a+0x1dc,0x300)
  u.mem_write(a+0x324,bytes([visible]));word(a+0x290,order);word(a+0x388,pending)
  # Freshly spawned idle workers have an unset destination, observed in the game.
  word(a+0x3a0,queue);u.mem_write(a+0x74,bytes([moving]));put(a+0x2a8,0x100010);put(a+0x2b4,0)
@@ -60,10 +60,17 @@ def rally_packet(uc,addr,size,data):
 h=u.hook_add(UC_HOOK_CODE,rally_packet)
 word(0xca5598+0x8c,160);word(0xca5598+0x8e,160)
 word(0xca5598+0x4ce0+(30*160+40)*2,1)
+word(0xca5624,160);word(0xca5626,160);put(0xcaa268,0x610000)
+put(0xca98f4+40*4,40*160)
+u.mem_write(0x610000+40*160+30,b'\x01')
 for typeid in [4,7,20,21,23,31]:
  unit(1,typeid=typeid)
  assert run(f['rally'],(0x10001,30,40,1))==4
  assert issued[-1][0:3]==(8,0x10001,30|(40<<16)),issued[-1]
+ u.mem_write(0x610000+40*160+30,b'\x03')
+ assert run(f['rally'],(0x10001,30,40,1))==4
+ assert issued[-1][0]==8
+ u.mem_write(0x610000+40*160+30,b'\x01')
 unit(1,flags=0x2005,typeid=2)
 assert run(f['rally'],(0x10001,30,40,1))==4
 assert issued[-1][0]==3
