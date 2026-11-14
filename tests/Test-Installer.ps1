@@ -1,4 +1,4 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $target=Join-Path $root ('.tools\update-fixture-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $target | Out-Null
@@ -29,5 +29,6 @@ $failed=$false
 try{try{& "$root\scripts\apply-update.ps1" -Package "$root\dist\MythLauncher.zip" -Target $lockedTarget -LauncherPid 0 -NoRestart}catch{$failed=$true}}finally{$lock.Dispose()}
 if(!$failed){throw 'Expected file lock failure'}
 if((Get-Content "$lockedTarget\MythLauncher.exe") -ne 'old executable'){throw 'Rollback did not restore old launcher'}
-if(Test-Path "$lockedTarget\MythLauncher-0.1.0.exe"){throw 'Rollback left new entrypoint'}
+$entrypoint=(Get-Content "$root\dist\package.json" -Raw | ConvertFrom-Json).Entrypoint
+if(Test-Path (Join-Path $lockedTarget $entrypoint)){throw 'Rollback left new entrypoint'}
 Write-Output 'PASS mid-install file lock rolls back earlier writes'

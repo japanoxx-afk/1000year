@@ -6,10 +6,10 @@ using System.Web.Script.Serialization;
 using System.Diagnostics;
 namespace Myth {
  public sealed class Edit { public int Offset; public string Before,After,Note; }
- public sealed class Recipe { public string SourceSHA256,OutputSHA256; public Edit[] Edits; }
- public sealed class Settings { public string GameDirectory=""; public int Mode=1; public bool Fullscreen=false; public bool AutoUpdate=true; }
+ public sealed class Recipe { public string SourceSHA256,OutputSHA256,AppendHex; public Edit[] Edits; }
+ public sealed class Settings { public string GameDirectory=""; public int Mode=2; public bool Fullscreen=false; public bool AutoUpdate=true; }
  public static class Core {
-  public const string Version="0.1.0";
+  public const string Version="0.2.0";
   public static string Home=AppDomain.CurrentDomain.BaseDirectory;
   public static string UserHome=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"1000year");
   public static string Hash(string path) {using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -22,15 +22,16 @@ namespace Myth {
    if(HashBytes(source)!=r.SourceSHA256)throw new IOException("지원하지 않는 게임 실행 파일입니다. V1.070KR 원본 MMyth.exe가 필요합니다.");
    var result=(byte[])source.Clone();
    foreach(var e in r.Edits) {var before=Hex(e.Before);var after=Hex(e.After);if(before.Length!=after.Length||e.Offset<0||e.Offset>result.Length-before.Length||!result.Skip(e.Offset).Take(before.Length).SequenceEqual(before))throw new IOException("패치 원본 바이트 검증 실패: "+e.Note);Buffer.BlockCopy(after,0,result,e.Offset,after.Length);}
+   if(!String.IsNullOrEmpty(r.AppendHex))result=result.Concat(Hex(r.AppendHex)).ToArray();
    if(HashBytes(result)!=r.OutputSHA256)throw new IOException("패치 결과 검증 실패");return result;
   }
   public static byte[] Resource(string name) {using(var s=typeof(Core).Assembly.GetManifestResourceStream(name)){if(s==null)throw new IOException("구성 파일 누락: "+name);using(var m=new MemoryStream()){s.CopyTo(m);return m.ToArray();}}}
   public static string Prepare(string directory,int mode,bool fullscreen) {
-   if(mode!=0 && mode!=1)throw new IOException("내부 해상도 시험 기능은 지형/HUD 검증이 끝나지 않아 실행할 수 없습니다.");
+   if(mode<0 || mode>2)throw new IOException("지원하지 않는 해상도 설정입니다.");
    directory=Path.GetFullPath(directory);string source=Path.Combine(directory,"MMyth.exe");if(!File.Exists(source)||!Directory.Exists(Path.Combine(directory,"tile")))throw new IOException("MMyth.exe와 tile 폴더가 있는 게임 폴더를 선택하세요.");
-   var recipe=new JavaScriptSerializer().Deserialize<Recipe>(System.Text.Encoding.UTF8.GetString(Resource("Myth.PortableRecipe")));
+   var recipe=new JavaScriptSerializer().Deserialize<Recipe>(System.Text.Encoding.UTF8.GetString(Resource(mode==2?"Myth.HDRecipe":"Myth.PortableRecipe")));
    byte[] patched=Patch(File.ReadAllBytes(source),recipe);
-   string target=Path.Combine(directory,"MMyth.Portable.exe");
+   string target=Path.Combine(directory,mode==2?"MMyth.HD.exe":"MMyth.Portable.exe");
    File.WriteAllBytes(target+".partial",patched);if(File.Exists(target))File.Delete(target);File.Move(target+".partial",target);
    string dll=Path.Combine(directory,"ddraw.dll"),ini=Path.Combine(directory,"ddraw.ini");
    byte[] wrapper=Resource("Myth.DDraw");
