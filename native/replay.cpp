@@ -9,6 +9,7 @@
 #include <cstring>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 namespace {
 template<class T> T& mem(uintptr_t p) {return *reinterpret_cast<T*>(p);}
@@ -75,7 +76,7 @@ State snapshot(){
 bool equal(const State&a,const State&b){return !memcmp(&a,&b,sizeof(a));}
 // Reveal only while deriving or drawing observer visuals. Restore the original
 // simulation visibility planes before any command/AI update or state check.
-uint8_t savedVisibility[8*0x6400];unsigned revealDepth=0;
+uint8_t savedVisibility[8*0x6400],savedDerivedVisibility[0xc800];unsigned revealDepth=0;
 int16_t savedDayPhase=0;
 struct ObserverView {
  bool enabled;
@@ -83,9 +84,10 @@ struct ObserverView {
   memcpy(savedVisibility,(void*)0xa7d4a6,sizeof(savedVisibility));memset((void*)0xa7d4a6,0,sizeof(savedVisibility));
   // Phase zero is the daylight render variant. Tile buffers CAA234/CAA238
   // contain terrain data, not observer visibility, and must remain untouched.
+  memcpy(savedDerivedVisibility,(void*)0xaaf4a6,sizeof(savedDerivedVisibility));memset((void*)0xaaf4a6,0,sizeof(savedDerivedVisibility));
   savedDayPhase=mem<int16_t>(0xb2d85e);mem<int16_t>(0xb2d85e)=0;
  }}
- ~ObserverView(){if(enabled&&--revealDepth==0){memcpy((void*)0xa7d4a6,savedVisibility,sizeof(savedVisibility));mem<int16_t>(0xb2d85e)=savedDayPhase;}}
+ ~ObserverView(){if(enabled&&--revealDepth==0){memcpy((void*)0xa7d4a6,savedVisibility,sizeof(savedVisibility));memcpy((void*)0xaaf4a6,savedDerivedVisibility,sizeof(savedDerivedVisibility));mem<int16_t>(0xb2d85e)=savedDayPhase;}}
 };
 // Per-unit visibility is cached separately from terrain fog. Limit the override
 // to rendering so combat, AI and the recorded player vision remain unchanged.
@@ -95,7 +97,7 @@ struct ObserverUnits {
  std::vector<Saved> saved;
  ObserverUnits(){if(!playback||(!active&&!completed)||failed)return;
   for(unsigned id=1;id<1200;++id){uintptr_t u=0x7ca6e8+id*2308;
-   if(!mem<uint16_t>(0xa79620+id*2)||mem<int32_t>(u+0x9c)<=0||mem<uint8_t>(u+0x324)!=1)continue;
+   if(!mem<uint16_t>(0xa79620+id*2)||mem<int32_t>(u+0x9c)<=0||mem<uint8_t>(u+0x324)!=1||mem<uint8_t>(u+0x76)>=8)continue;
    saved.push_back({u,mem<uint8_t>(u+0x1c),mem<uint32_t>(u+0x60)});
    mem<uint8_t>(u+0x1c)=1;mem<uint32_t>(u+0x60)=mem<uint32_t>(0xa6ea50)-1;
   }
@@ -126,49 +128,108 @@ std::vector<PlayerResources> playerResources(){
   MultiByteToWideChar(949,0,name,-1,r.name,32);rows.push_back(r);
  }return rows;
 }
+// Resource text never passes through the palettized surface's GDI DC. Rasterize
+// a binary mask, then apply palette indices to the actual native frame once.
+std::vector<uint8_t> resourceUnderlay;void* resourceSurface=nullptr;
+int resourceLeft=0,resourceWidth=0;
+bool lockSurface(void* surface,uint8_t* desc){
+ memset(desc,0,124);mem<uint32_t>((uintptr_t)desc)=124;
+ return SUCCEEDED(((HRESULT(WINAPI*)(void*,RECT*,void*,DWORD,HANDLE))(*(void***)surface)[25])(surface,nullptr,desc,1,nullptr));
+}
+void unlockSurface(void* surface){((HRESULT(WINAPI*)(void*,RECT*))(*(void***)surface)[32])(surface,nullptr);}
+void restoreResources(){
+ if(!resourceSurface||resourceUnderlay.empty())return;
+ uint8_t desc[124];if(lockSurface(resourceSurface,desc)){
+  auto target=mem<uint8_t*>((uintptr_t)desc+36);int pitch=mem<int32_t>((uintptr_t)desc+16);
+  if(target&&pitch>=resourceLeft+resourceWidth)for(int y=0;y<148;++y)memcpy(target+(y+32)*pitch+resourceLeft,resourceUnderlay.data()+y*resourceWidth,resourceWidth);
+  unlockSurface(resourceSurface);
+ }resourceSurface=nullptr;resourceUnderlay.clear();
+}
 void drawResources(){
- if(!playback||(!active&&!completed)||failed)return;
- void* surface=mem<void*>(0x65181c);if(!surface)return;
- auto table=*(void***)surface;HDC dc=nullptr;
- auto getDC=(HRESULT(WINAPI*)(void*,HDC*))table[17];auto releaseDC=(HRESULT(WINAPI*)(void*,HDC))table[26];
- if(FAILED(getDC(surface,&dc))||!dc)return;
- // Compose offscreen and commit once. The DirectDraw wrapper may display
- // intermediate surface changes between the game's four render stages.
- HDC destination=dc;int width=mem<int32_t>(0x115e308);
- if(width<1||width>8192){releaseDC(surface,dc);return;}
- HDC composed=CreateCompatibleDC(destination);
- BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=width;info.bmiHeader.biHeight=-180;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
- void* pixels=nullptr;HBITMAP bitmap=CreateDIBSection(destination,&info,DIB_RGB_COLORS,&pixels,nullptr,0);
- if(!composed||!bitmap){if(composed)DeleteDC(composed);if(bitmap)DeleteObject(bitmap);releaseDC(surface,dc);return;}
- HGDIOBJ previous=SelectObject(composed,bitmap);BitBlt(composed,0,0,width,180,destination,0,0,SRCCOPY);dc=composed;
- int saved=SaveDC(dc);SetBkMode(dc,TRANSPARENT);
- HFONT font=mem<HFONT>(0xcecc30);static HFONT observerFont=nullptr;
- if(!observerFont){LOGFONTW lf{};if(!font||GetObjectW(font,sizeof(lf),&lf)!=sizeof(lf)){lf.lfHeight=-14;lf.lfCharSet=HANGEUL_CHARSET;wcscpy_s(lf.lfFaceName,L"굴림");}lf.lfQuality=NONANTIALIASED_QUALITY;observerFont=CreateFontIndirectW(&lf);}
- if(observerFont)SelectObject(dc,observerFont);
- int left=width-430;if(left<4)left=4;
- // Legacy replays reserve 128 columns which the background never repaints.
- // Clear only that non-terrain strip before drawing changing-width numbers.
- int terrainWidth=mem<int32_t>(0x46bdca);if(terrainWidth>0&&terrainWidth<width){RECT unused{terrainWidth,32,width,180};FillRect(dc,&unused,(HBRUSH)GetStockObject(BLACK_BRUSH));}
+ if(!playback||(!active&&!completed)||failed||mem<int32_t>(0x115e304)!=8)return;
+ void* surface=mem<void*>(0x65181c);int width=mem<int32_t>(0x115e2fc);if(!surface||width<434||width>8192)return;
+ restoreResources();
+ HDC dc=CreateCompatibleDC(nullptr);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=430;info.bmiHeader.biHeight=-148;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;void* pixels=nullptr;
+ HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&pixels,nullptr,0);if(!dc||!bitmap){if(dc)DeleteDC(dc);if(bitmap)DeleteObject(bitmap);return;}
+ HGDIOBJ old=SelectObject(dc,bitmap);auto raster=(uint32_t*)pixels;std::fill(raster,raster+430*148,0x00ff00ff);
+ static HFONT font=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,HANGEUL_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,DEFAULT_PITCH,L"굴림");
+ auto oldFont=font?SelectObject(dc,font):nullptr;SetBkMode(dc,TRANSPARENT);
  auto text=[&](int x,int y,const wchar_t* value){int n=(int)wcslen(value);SetTextColor(dc,RGB(0,0,0));TextOutW(dc,x+1,y+1,value,n);SetTextColor(dc,RGB(255,255,255));TextOutW(dc,x,y,value,n);};
- text(left,34,L"플레이어");text(left+150,34,L"쌀");text(left+235,34,L"나무");text(left+320,34,L"전비");
- int y=50;for(const auto& r:playerResources()){
-  wchar_t label[64],value[64];swprintf_s(label,L"P%u %s",r.slot+1,r.name);text(left,y,label);
-  swprintf_s(value,L"%d",r.rice);text(left+150,y,value);swprintf_s(value,L"%d",r.wood);text(left+235,y,value);
-  swprintf_s(value,L"%d/%d",r.population,r.limit);text(left+320,y,value);y+=16;
+ text(0,2,L"플레이어");text(150,2,L"쌀");text(235,2,L"나무");text(320,2,L"전비");
+ int y=18;for(const auto& r:playerResources()){
+  wchar_t label[64],value[64];swprintf_s(label,L"P%u %s",r.slot+1,r.name);text(0,y,label);
+  swprintf_s(value,L"%d",r.rice);text(150,y,value);swprintf_s(value,L"%d",r.wood);text(235,y,value);swprintf_s(value,L"%d/%d",r.population,r.limit);text(320,y,value);y+=16;
+ }GdiFlush();
+ uint8_t desc[124];if(lockSurface(surface,desc)){
+  auto target=mem<uint8_t*>((uintptr_t)desc+36);int pitch=mem<int32_t>((uintptr_t)desc+16);
+  resourceLeft=width-430;resourceWidth=430;
+  if(target&&pitch>=width){resourceUnderlay.resize(430*148);
+   for(int row=0;row<148;++row){auto destination=target+(row+32)*pitch+resourceLeft;memcpy(resourceUnderlay.data()+row*430,destination,430);
+    for(int x=0;x<430;++x){uint32_t value=raster[row*430+x]&0xffffff;if(value!=0xff00ff)destination[x]=value?255:0;}
+   }resourceSurface=surface;++resourceCommits;
+#ifdef MYTH_OBSERVER_CAMERA_TEST
+   static unsigned missing=0;for(int row=0;row<148;++row)for(int x=0;x<430;++x){uint32_t value=raster[row*430+x]&0xffffff;if(value!=0xff00ff&&target[(row+32)*pitch+resourceLeft+x]!=(value?255:0))++missing;}
+   if(resourceCommits%60==0){FILE* f=_wfopen((root+L"\\observer-validation.txt").c_str(),L"wb");if(f){fprintf(f,"presentedPanels=%u missingGlyphPixels=%u panelLeft=%d screenWidth=%d\n",resourceCommits,missing,resourceLeft,width);for(unsigned i=0;i<8;++i)fprintf(f,"P%u draws=%u\n",i+1,observerDrawn[i]);fclose(f);}}
+#endif
+  }unlockSurface(surface);
  }
- if(saved)RestoreDC(dc,saved);
- BitBlt(destination,0,32,width,148,dc,0,32,SRCCOPY);GdiFlush();
- SelectObject(composed,previous);DeleteObject(bitmap);DeleteDC(composed);releaseDC(surface,destination);++resourceCommits;
- static DWORD lastDiagnostic=0;DWORD now=GetTickCount();
- if(now-lastDiagnostic>=1000&&GetFileAttributesW((root+L"\\diagnostics.enabled").c_str())!=INVALID_FILE_ATTRIBUTES){lastDiagnostic=now;
-  FILE* f=_wfopen((root+L"\\observer-diagnostics.txt").c_str(),L"wb");if(f){fprintf(f,"resourceCommits=%u positionalSounds=%u\n",resourceCommits,positionalSounds);for(unsigned i=0;i<8;++i)fprintf(f,"P%u draws=%u\n",i+1,observerDrawn[i]);fclose(f);}
+ if(oldFont)SelectObject(dc,oldFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
+}
+// Keep the native map traversal/depth order, but draw observer sprites using
+// the owner's daylight palette, bypassing the local-player cached fog tint.
+bool observerUnitEligible(uintptr_t u){return mem<int32_t>(u+0x9c)>0&&mem<uint8_t>(u+0x324)==1&&mem<uint8_t>(u+0x76)<8;}
+uint32_t __fastcall observerUnitSprite(void* self,void*){
+ uintptr_t u=(uintptr_t)self;
+ if(!playback||(!active&&!completed)||failed||!observerUnitEligible(u))return ((uint32_t(__thiscall*)(void*))0x4069b0)(self);
+ uint8_t dirty=mem<uint8_t>(u+0x28);mem<uint8_t>(u+0x28)=1;
+ ((void(__thiscall*)(void*))0x45e0a0)(self);mem<uint8_t>(u+0x28)=dirty;((void(__thiscall*)(void*))0x416fb0)(self);
+ uint32_t result=((uint32_t(__thiscall*)(void*))0x4069b0)(self);
+ int sprite=mem<int32_t>(u+0x30),animation=mem<int32_t>(u+0x34);unsigned owner=mem<uint8_t>(u+0x76);
+ if(sprite>0&&sprite<260&&animation>=0&&animation<766&&((uint32_t(__cdecl*)(int))0x469bf0)(sprite)){
+  auto draw=(void(__cdecl*)(int,int,int,int,int,int,const void*))(mem<int32_t>(u+0x298)==1?0x46a3d0:0x46a330);
+  draw(mem<int16_t>(u+0x2c6),mem<int16_t>(u+0x2c8),mem<int32_t>(u+0x2cc),mem<int32_t>(u+0x2d0),sprite,animation,(void*)(0x64cd00+owner*9*256));
  }
+ return result;
+}
+uint32_t __fastcall observerMapUnits(void* self,void*){
+ uint32_t result=((uint32_t(__thiscall*)(void*))0x480850)(self);
+ if(!playback||(!active&&!completed)||failed)return result;
+ // Some unseen objects have no entry in the local player's map display lists.
+ std::vector<uintptr_t> missing;
+ for(unsigned id=1;id<1200;++id){uintptr_t u=0x7ca6e8+id*2308;
+  if(!mem<uint16_t>(0xa79620+id*2)||!observerUnitEligible(u)||mem<uint32_t>(u+0x60)==mem<uint32_t>(0xa6ea50))continue;
+  ((void(__thiscall*)(void*))0x416fb0)((void*)u);
+  int x=mem<int16_t>(u+0x2c6),y=mem<int16_t>(u+0x2c8),w=mem<int32_t>(u+0x2cc),h=mem<int32_t>(u+0x2d0);
+  if(w>0&&h>0&&x<mem<int32_t>(0x115e2fc)&&y<mem<int32_t>(0x115e300)&&x+w>0&&y+h>0)missing.push_back(u);
+ }
+ std::sort(missing.begin(),missing.end(),[](uintptr_t a,uintptr_t b){return mem<int16_t>(a+0x2c8)+mem<int32_t>(a+0x2d0)<mem<int16_t>(b+0x2c8)+mem<int32_t>(b+0x2d0);});
+ for(uintptr_t u:missing)observerUnitSprite((void*)u,nullptr);
+ return result;
 }
 uint32_t __fastcall observerFog(void* self,void*){ObserverView view;return ((uint32_t(__thiscall*)(void*))0x47fa10)(self);}
-uint32_t __cdecl observerBackground(){ObserverView view;auto result=((uint32_t(__cdecl*)())0x46bda0)();drawResources();return result;}
-uint32_t __cdecl observerUnits(){ObserverView view;ObserverUnits units;auto result=((uint32_t(__cdecl*)())0x46be00)();drawResources();return result;}
-uint32_t __cdecl observerSelection(){ObserverView view;auto result=((uint32_t(__cdecl*)())0x46bea0)();drawResources();return result;}
-uint32_t __cdecl observerHud(){ObserverView view;drawResources();return ((uint32_t(__cdecl*)())0x46c380)();}
+uint32_t __cdecl observerBackground(){ObserverView view;
+#ifdef MYTH_OBSERVER_CAMERA_TEST
+ static bool moved=false;if(!moved&&mem<uint32_t>(0xa6ea50)>10){moved=true;mem<int32_t>(0xb2d88c)=100;mem<int32_t>(0xb2d890)=18;mem<int32_t>(0xb2d888)=1;}
+#endif
+auto result=((uint32_t(__cdecl*)())0x46bda0)();return result;}
+uint32_t __cdecl observerUnits(){ObserverView view;ObserverUnits units;auto result=((uint32_t(__cdecl*)())0x46be00)();return result;}
+uint32_t __cdecl observerSelection(){ObserverView view;auto result=((uint32_t(__cdecl*)())0x46bea0)();return result;}
+#ifdef MYTH_OBSERVER_CAMERA_TEST
+void dumpObserverFrame(){
+ static unsigned rendered=0;++rendered;if(rendered!=60&&rendered!=200&&rendered!=400)return;
+ void* surface=mem<void*>(0x65181c);void* palette=nullptr;RGBQUAD colors[256]{};PALETTEENTRY entries[256]{};
+ void* primary=mem<void*>(0x115f814);if(primary&&SUCCEEDED(((HRESULT(WINAPI*)(void*,void**))(*(void***)primary)[20])(primary,&palette))&&palette){((HRESULT(WINAPI*)(void*,DWORD,DWORD,DWORD,PALETTEENTRY*))(*(void***)palette)[4])(palette,0,0,256,entries);((ULONG(WINAPI*)(void*))(*(void***)palette)[2])(palette);}
+ for(unsigned i=0;i<256;++i){colors[i].rgbRed=entries[i].peRed;colors[i].rgbGreen=entries[i].peGreen;colors[i].rgbBlue=entries[i].peBlue;}
+ uint8_t desc[124];if(!lockSurface(surface,desc))return;
+ int width=mem<int32_t>(0x115e2fc),height=mem<int32_t>(0x115e300),pitch=mem<int32_t>((uintptr_t)desc+16);auto pixels=mem<uint8_t*>((uintptr_t)desc+36);
+ wchar_t name[64];swprintf_s(name,L"\\observer-frame-%u.bmp",rendered);FILE* f=_wfopen((root+name).c_str(),L"wb");if(f){BITMAPFILEHEADER header{};header.bfType=0x4d42;header.bfOffBits=14+40+1024;header.bfSize=header.bfOffBits+width*height;BITMAPINFOHEADER info{};info.biSize=40;info.biWidth=width;info.biHeight=-height;info.biPlanes=1;info.biBitCount=8;info.biSizeImage=width*height;fwrite(&header,14,1,f);fwrite(&info,40,1,f);fwrite(colors,1024,1,f);for(int row=0;row<height;++row)fwrite(pixels+row*pitch,width,1,f);fclose(f);}unlockSurface(surface);
+}
+#endif
+uint32_t __cdecl observerHud(){ObserverView view;drawResources();
+#ifdef MYTH_OBSERVER_CAMERA_TEST
+ dumpObserverFrame();
+#endif
+auto result=((uint32_t(__cdecl*)())0x46c380)();restoreResources();return result;}
 bool write(const void* p,size_t n){if(failed)return false;if(!output||ftell(output)<0||ftell(output)+n>128u*1024*1024||fwrite(p,1,n,output)!=n){fail("ERROR: replay write failed or size limit reached");return false;}return true;}
 bool read(void* p,size_t n){if(cursor>input.size()||n>input.size()-cursor){fail("ERROR: truncated replay");return false;}memcpy(p,input.data()+cursor,n);cursor+=n;return true;}
 void finish(){
@@ -457,7 +518,7 @@ bool install(){
     memcmp((void*)0x46c69c,"\xe8\x2f\x8c\xfc\xff",5)||
     memcmp((void*)0x46c6a9,"\xe8\xf2\x00\x00\x00",5))return false;
  uintptr_t commandTarget=0x435045+mem<int32_t>(0x435041);
- if(playback)for(auto call: {std::pair<uintptr_t,uintptr_t>{0x46c68d,0x47fa10},{0x471f02,0x46bda0},{0x471f62,0x46be00},{0x471f85,0x46bea0},{0x471fa8,0x46c380}})
+ if(playback)for(auto call: {std::pair<uintptr_t,uintptr_t>{0x46be1a,0x480850},{0x480c84,0x4069b0},{0x480dba,0x4069b0},{0x46c68d,0x47fa10},{0x471f02,0x46bda0},{0x471f62,0x46be00},{0x471f85,0x46bea0},{0x471fa8,0x46c380}})
   if(mem<uint8_t>(call.first)!=0xe8||call.first+5+mem<int32_t>(call.first+1)!=call.second)return false;
  bool hdCommand=mem<uint8_t>(0x435040)==0xe9&&mem<uint8_t>(0x435045)==0x90&&commandTarget>=0x11d0000&&commandTarget<0x11d2000;
  if(memcmp((void*)0x435040,"\x81\xec\xb8\x00\x00\x00",6)&&!hdCommand)return false;
@@ -471,11 +532,16 @@ bool install(){
  if(playback&&!patch(0x435040,"\xb8\x01\x00\x00\x00\xc3",6))return false;
  if(playback){
   if(memcmp((void*)0x433560,"\x66\x8b\x15\xa6\x72\x66\x00",7)||memcmp((void*)0x41fb50,"\x81\xec\xb0\x00\x00\x00",6)||memcmp((void*)0x431330,"\x81\xec\x88\x00\x00\x00",6))return false;
+  // The HD terrain traversal was widened, but the separate ground-unit pass
+  // retained the original +/-13 tiles. Match the enlarged terrain traversal.
+  for(uintptr_t address:{0x480c9c,0x480cad,0x480cc5,0x480cc9}){
+   if(mem<uint8_t>(address)!=13)return false;uint8_t radius=24;if(!patch(address,&radius,1))return false;
+  }
   // Filter the shared sound queue instead of disabling every effect sound.
   if(!jump(0x433560,(void*)observerSoundQueue,7)||!patch(0x41fb50,"\xb8\x01\x00\x00\x00\xc3",6)||!patch(0x431330,"\xb8\x01\x00\x00\x00\xc3",6))return false;
  }
  if(playback){
-  for(auto site: {std::pair<uintptr_t,uintptr_t>{0x46c68d,(uintptr_t)observerFog},{0x471f02,(uintptr_t)observerBackground},{0x471f62,(uintptr_t)observerUnits},{0x471f85,(uintptr_t)observerSelection},{0x471fa8,(uintptr_t)observerHud}}){
+  for(auto site: {std::pair<uintptr_t,uintptr_t>{0x46be1a,(uintptr_t)observerMapUnits},{0x480c84,(uintptr_t)observerUnitSprite},{0x480dba,(uintptr_t)observerUnitSprite},{0x46c68d,(uintptr_t)observerFog},{0x471f02,(uintptr_t)observerBackground},{0x471f62,(uintptr_t)observerUnits},{0x471f85,(uintptr_t)observerSelection},{0x471fa8,(uintptr_t)observerHud}}){
    uint8_t code[5]={0xe8};mem<int32_t>((uintptr_t)code+1)=(int32_t)(site.second-site.first-5);if(!patch(site.first,code,5))return false;
   }
  }
