@@ -3,6 +3,27 @@ def install(g):
  asm,b,raw,va,hook,W=(g[n] for n in ('asm','b','raw','va','hook','W'))
  def emit(code):
   at=va+g['cursor'];blob=asm(at,code);off=raw+g['cursor'];b[off:off+len(blob)]=blob;g['cursor']=(g['cursor']+len(blob)+15)&~15;return at
+ # The input cursor must offer a rally command before the simulation receiver
+ # can process it. Buildings previously offered no ground command at all.
+ hook(0x46ccf0,8,'''push edx; push ecx;
+ cmp dword ptr [0xa7957c],1; jne native;
+ movzx edx,word ptr [0xa79580]; test edx,edx; jz native;
+ imul edx,edx,2308; add edx,0x7ca6e8;
+ test byte ptr [edx+0x1d8],2; jz native;
+ movsx ecx,byte ptr [edx+0x76]; cmp ecx,dword ptr [0xcbdc3c]; jne native;
+ mov byte ptr [0xa6ef80],1; mov dword ptr [0x78c2c0],1;
+ mov word ptr [0xa6ef82],21; mov word ptr [0xa6ef84],8;
+ mov word ptr [0xa6ef86],1; pop ecx; pop edx; mov eax,1; ret;
+ native: pop ecx; pop edx; cmp word ptr [0xa6ef82],0; jmp 0x46ccf8''')
+ # ESC button objects share their coordinates between drawing and hit testing.
+ cx=(W-640)//2;cy=(g['H']-480)//2
+ for x,y in [(0x41e497,0x41e492),(0x41e4c1,0x41e4bc),(0x41e4ec,0x41e4e7),(0x41e516,0x41e511),(0x41e540,0x41e53b),(0x41e56b,0x41e566),(0x41e595,0x41e590),(0x41e5bf,0x41e5ba)]:
+  import struct
+  for addr,delta in [(x,cx),(y,cy)]:
+   old=struct.unpack('<I',g['p'].get_data(addr+1-0x400000,4))[0]
+   g['d'](addr+1,old+delta,'center ESC button')
+ g['d'](0x41e955,150+cx,'center ESC backdrop x')
+ g['d'](0x41e950,138+cy,'center ESC backdrop y')
  # Feed ordinary ground orders for buildings through the game's native rally
  # command (21). Native +63C/+63E fields are serialized with the unit and read
  # by the production completion path at 0040E5F1.
@@ -13,14 +34,18 @@ def install(g):
  # Keep the original collision/connectivity search, but rank valid exits by
  # distance to the rally tile instead of distance to the building centre.
  g['d'](0x4652ad,0x7fffffff,'rally exit distance sentinel')
- hook(0x465341,7,'''movsx edx,word ptr [esi+0x63e];
- cmp edx,0; jl centre; cmp word ptr [esi+0x63c],0; jl centre;
- jmp 0x465348;
- centre: movsx edx,word ptr [esi+0x2aa]; jmp 0x465348''')
- hook(0x46534d,7,'''movsx edx,word ptr [esi+0x63c];
- cmp edx,0; jl centre; cmp word ptr [esi+0x63e],0; jl centre;
- jmp 0x465354;
- centre: movsx edx,word ptr [esi+0x2a8]; jmp 0x465354''')
+ hook(0x465341,38,'''push ebp;
+ movsx ebp,di; movsx edx,word ptr [esi+0x2a8]; sub ebp,edx;
+ movsx ecx,bx; movsx edx,word ptr [esi+0x2aa]; sub ecx,edx;
+ mov eax,ebp; imul eax,eax; imul ecx,ecx; add eax,ecx; shl eax,10;
+ cmp word ptr [esi+0x63c],0; jl done; cmp word ptr [esi+0x63e],0; jl done;
+ movsx ecx,word ptr [esi+0x63c]; movsx edx,word ptr [esi+0x2a8];
+ cmp ecx,edx; je y; jl left; sub eax,ebp; jmp y;
+ left: add eax,ebp;
+ y: movsx ebp,bx; movsx edx,word ptr [esi+0x2aa]; sub ebp,edx;
+ movsx ecx,word ptr [esi+0x63e]; cmp ecx,edx; je done; jl up;
+ sub eax,ebp; jmp done; up: add eax,ebp;
+ done: pop ebp; mov ecx,dword ptr [esp+0x14]; jmp 0x465367''')
  g['d'](0x4653a5,0x7fffffff,'rally exit failure sentinel')
  # Production's original rally dispatch: use the native harvest order on a
  # resource tile for workers, otherwise retain the native move order.

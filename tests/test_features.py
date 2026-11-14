@@ -28,6 +28,28 @@ a=unit(1)
 assert run(0x464290,(3,30|(40<<16),0,100,0),ecx=a)==24
 assert struct.unpack('<H',u.mem_read(a+0x388,2))[0]==3
 print('PASS native building ground orders set serialized rally coordinates; mobile orders preserved')
+a=unit(1,flags=0x10048c2,typeid=58)
+put(0xa7957c,1);put(0xa79580,0x10001);word(0xa6ef82,0)
+assert run(0x46ccf0)==4
+assert struct.unpack('<H',u.mem_read(0xa6ef82,2))[0]==21
+assert struct.unpack('<H',u.mem_read(0xa6ef86,2))[0]==1
+word(0xa6ef82,0);put(0xa7957c,0)
+print('PASS selected building offers rally command through actual ground-input cursor path')
+# Run the real ESC button construction block and capture the shared draw/hit
+# coordinates passed to the original constructor.
+u.mem_write(0x4593b0,bytes.fromhex('c21c00'));buttons=[]
+def menu_button(uc,addr,size,data):
+ if addr==0x4593b0:
+  sp=uc.reg_read(UC_X86_REG_ESP)
+  buttons.append(struct.unpack('<II',uc.mem_read(sp+4,8)))
+h=u.hook_add(UC_HOOK_CODE,menu_button)
+assert run(0x41e47c,stop=0x41e5ce)==0
+u.hook_del(h)
+cx=(W-640)//2;cy=(H-480)//2
+assert buttons==[(x+cx,y+cy) for x,y in [(150,172),(150,288),(150,211),(150,250),(368,171),(368,248),(368,210),(368,287)]],buttons
+assert struct.unpack('<I',p.get_data(0x41e955-base,4))[0]==150+cx
+assert struct.unpack('<I',p.get_data(0x41e950-base,4))[0]==138+cy
+print('PASS ESC backdrop and all eight shared draw/hit button coordinates translated to screen centre')
 # Capture production rally commands with the real map-resource predicate.
 saved=bytes(u.mem_read(0x4357b0,1));u.mem_write(0x4357b0,b'\xc3')
 issued=[]
@@ -65,6 +87,7 @@ for target in [(50,0),(50,159),(0,50),(159,50)]:
  word(a+0x63c,target[0]);word(a+0x63e,target[1])
  assert run(0x4652a0,(0x209000,0x209004,1,1,0),ecx=a)==24
  x=struct.unpack('<h',u.mem_read(0x209000,2))[0];y=struct.unpack('<h',u.mem_read(0x209004,2))[0]
+ assert (x-50)**2+(y-50)**2==9,(target,x,y)
  assert (target[1]!=0 or y<50) and (target[1]!=159 or y>50)
  assert (target[0]!=0 or x<50) and (target[0]!=159 or x>50),(target,x,y)
 blocked.update((x,y) for x in range(46,55) for y in range(46,55))
