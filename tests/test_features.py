@@ -128,6 +128,14 @@ for entry,args,stack in [(0x4652a0,(0x209000,0x209004,1,1,0),24),(0x417880,(0x20
  blocked.update((x,y) for x in range(42,59) for y in range(42,59))
  assert run(entry,args,ecx=a)==stack
  assert u.reg_read(UC_X86_REG_EAX)==0
+ # Same-quadrant vectors must not collapse to the same sign-only direction.
+ # Recorded live example: building (98,18), rally (89,15), birth (98,16).
+ blocked.clear()
+ for target,want in [((41,47),(48,50)),((59,47),(52,50)),((50,10),(50,47)),((50,90),(50,53))]:
+  word(a+0x63c,target[0]);word(a+0x63e,target[1])
+  assert run(entry,args,ecx=a)==stack
+  actual=tuple(struct.unpack('<h',u.mem_read(ptr,2))[0] for ptr in [0x209000,0x209004])
+  assert actual==want,(hex(entry),target,actual,want)
 u.hook_del(h)
 print('PASS all three production paths obey four rally directions around asymmetric footprints and stay nearby')
 for kwargs,want in [({},1),({'order':2},0),({'order':8},0),({'pending':2},0),({'queue':1},0),({'moving':1},0),({'owner':1},0),({'hp':0},0),({'visible':0},0),({'flags':0x1c8c2},0),({'flags':0x2005},2),({'flags':0x22005},6),({'flags':0x2001},1)]:

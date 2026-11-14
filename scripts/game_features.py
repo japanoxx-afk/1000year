@@ -36,17 +36,19 @@ def install(g):
  exit_score=emit('''push ebp;
  movsx ebp,di; movsx edx,word ptr [esi+0x2a8]; sub ebp,edx;
  movsx ecx,bx; movsx edx,word ptr [esi+0x2aa]; sub ecx,edx;
- mov eax,ebp; imul eax,eax; imul ecx,ecx; add eax,ecx; shl eax,10;
+ mov eax,ebp; imul eax,eax; imul ecx,ecx; add eax,ecx; shl eax,16;
  cmp word ptr [esi+0x63c],0; jl done; cmp word ptr [esi+0x63e],0; jl done;
- push eax; xor eax,eax;
- movsx ecx,word ptr [esi+0x63c]; movsx edx,word ptr [esi+0x2a8];
- cmp ecx,edx; je y; jl left; add eax,ebp; jmp y;
- left: sub eax,ebp;
- y: movsx ebp,bx; movsx edx,word ptr [esi+0x2aa]; sub ebp,edx;
- movsx ecx,word ptr [esi+0x63e]; cmp ecx,edx; je side; jl up;
- add eax,ebp; jmp side; up: sub eax,ebp;
- side: mov edx,eax; pop eax; test edx,edx; jg facing;
- add eax,0x100000; facing: sub eax,edx;
+ push eax;
+ movsx ecx,word ptr [esi+0x63c]; movsx edx,word ptr [esi+0x2a8]; sub ecx,edx;
+ movsx eax,bx; movsx edx,word ptr [esi+0x2aa]; sub eax,edx;
+ movsx edx,word ptr [esi+0x63e]; movsx edx,dx;
+ push ecx; movsx ecx,word ptr [esi+0x2aa]; sub edx,ecx; pop ecx;
+ push ecx; push edx; imul ecx,ebp; imul edx,eax; add ecx,edx;
+ imul ebp,dword ptr [esp]; imul eax,dword ptr [esp+4]; sub eax,ebp; add esp,8;
+ test eax,eax; jns positive; neg eax; positive: add eax,eax;
+ mov edx,ecx; test edx,edx; jle outside; cmp eax,edx; jg outside;
+ pop eax; jmp facing; outside: pop eax; add eax,0x1000000;
+ facing: sub eax,edx;
  done: pop ebp; ret''')
  for start,length,end,initial,final in [(0x465341,38,0x465367,0x4652ad,0x4653a5),(0x4178e5,38,0x41790b,0x41788d,0x417941)]:
   g['d'](initial,0x7fffffff,'exit distance sentinel')
