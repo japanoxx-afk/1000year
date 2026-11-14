@@ -416,20 +416,10 @@ def install(g):
  ''')
  hook(0x435040,6,f'jmp {command}')
  # Right-align resources using exact icon/glyph widths and current digit counts.
- clear_resources=emit(f'''
- pushad; mov ebx,dword ptr [0x65181c]; test ebx,ebx; jz done;
- sub esp,116; mov edi,esp; xor eax,eax; mov ecx,29; cld;
- rep stosd dword ptr es:[edi],eax;
- mov dword ptr [esp],100;
- mov dword ptr [esp+100],{max(0,W-512)};
- mov dword ptr [esp+108],{W}; mov dword ptr [esp+112],28;
- mov eax,esp; lea edx,[esp+100]; push eax; push 0x1000400;
- push 0; push 0; push edx; push ebx; mov eax,dword ptr [ebx];
- call dword ptr [eax+0x14]; add esp,116;
- done: popad; ret
- ''')
+ # The full-width background is repainted before units and the HUD on each
+ # render cycle. It removes old digits without overwriting terrain or units
+ # with the former 512x28 black color-fill rectangle.
  layout=emit(f'''
- call {clear_resources}
  pushad
  mov eax,dword ptr [ebp+0x14]
  call digits

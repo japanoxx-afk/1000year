@@ -6,7 +6,7 @@ from unicorn import Uc,UC_ARCH_X86,UC_MODE_32
 from unicorn.x86_const import *
 name=sys.argv[3] if len(sys.argv)>3 else 'hd'
 W,H=(1280,720) if name=='wide' else (1024,768)
-VW=W-128;DX=W-640;DY=H-480
+VW=W;DX=W-640;DY=H-480
 r=json.loads(pathlib.Path('compat/'+name+'.json').read_text())
 s=pathlib.Path(sys.argv[1]).read_bytes();assert hashlib.sha256(s).hexdigest()==r['SourceSHA256']
 b=bytearray(s)
@@ -30,9 +30,9 @@ u.mem_write(buf,b'\x35'*(VW*H));u.mem_write(dest-16,b'\xa7'*(W*H+32))
 put(0x115e2f8+12,8,W,H);put(0x115e2f8+0x1514,dest)
 assert run(0x4b0d30,(0,0,VW,H,buf),0x115e2f8)==24
 out=bytes(u.mem_read(dest,W*H))
-assert all(out[y*W:y*W+VW]==b'\x35'*VW and out[y*W+VW:(y+1)*W]==b'\xa7'*128 for y in range(H))
+assert out==b'\x35'*(W*H)
 assert bytes(u.mem_read(dest-16,16))==bytes(u.mem_read(dest+W*H,16))==b'\xa7'*16
-print('PASS expanded terrain stride, reserved HUD columns and memory sentinels')
+print('PASS full-width terrain beneath HUD, matching stride and memory sentinels')
 # Real HUD layout with deterministic sprite dimensions, then real button hit test.
 for address in [0x469c10,0x469c30]:u.mem_write(address,bytes.fromhex('b820000000c3'))
 assert run(0x43ab60,ecx=0xb8d6b0)==4
@@ -43,6 +43,14 @@ assert run(0x49de70,ecx=0x7a2ce8)==4
 assert run(0x49de70,ecx=0x7a2ce8)==4
 assert struct.unpack('<II',u.mem_read(0x7a2ce8,8))==(467+DX,385+DY)
 print('PASS mini-map shared position reset is idempotent')
+# The camera footprint must include the former reserved right-hand columns.
+u.reg_write(UC_X86_REG_ESI,0x7a2ce8);u.reg_write(UC_X86_REG_EAX,512)
+assert run(0x49d702,stop=0x49d709)==0
+assert struct.unpack('<H',u.mem_read(0x7a2ce8+0x2284c,2))[0]==W
+u.reg_write(UC_X86_REG_EAX,480)
+assert run(0x49d72c,stop=0x49d733)==0
+assert struct.unpack('<H',u.mem_read(0x7a2ce8+0x2284e,2))[0]==H
+print('PASS minimap camera footprint includes full-width terrain')
 # Test the background translation trampoline restores the original return path.
 put(0xcecc60,480);assert run(0x468140,(900,700),stop=0x468146)==0
 assert struct.unpack('<I',u.mem_read(0x208004,4))[0]==900-DX
@@ -112,7 +120,7 @@ u.hook_del(hook)
 assert len(bar)==1 and bar[0][:4]==(surface,DX+6,H-12,0x603000),bar
 assert bar[0][5]==0x11
 print('PASS bottom red bar follows the lower-right HUD in both axes:',name)
-# Changing resource digit counts must not leave old digits on the back buffer.
+# Resource layout must not cover the freshly rendered terrain with a black bar.
 put(vtable+0x14,blit);clears=[]
 def capture_clear(uc,address,size,data):
  if address==blit:
@@ -122,6 +130,6 @@ def capture_clear(uc,address,size,data):
 h=u.hook_add(UC_HOOK_CODE,capture_clear)
 u.reg_write(UC_X86_REG_EBP,player)
 assert run(r['Features']['layout'])==4
-assert clears==[(surface,(max(0,W-512),0,W,28),0,0,0x1000400,100)],clears
+assert clears==[],clears
 u.hook_del(h)
-print('PASS resource region is cleared before changing-width digits are redrawn:',name)
+print('PASS resource layout preserves underlying terrain without black color fill:',name)

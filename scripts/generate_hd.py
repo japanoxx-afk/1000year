@@ -10,7 +10,9 @@ parser.add_argument('--exe')
 parser.add_argument('--wide',action='store_true',help='1280x720 internal 16:9 mode')
 args=parser.parse_args()
 W,H=(1280,720) if args.wide else (1024,768)
-VW=W-128
+# Render terrain beneath the HUD as well: its transparent upper region must
+# expose the world rather than an unpainted legacy 128-pixel sidebar.
+VW=W
 DX,DY=W-640,H-480
 source=pathlib.Path(args.source).read_bytes()
 assert hashlib.sha256(source).hexdigest()=='1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf', 'Unsupported executable'
