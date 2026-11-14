@@ -10,12 +10,12 @@ using System.Threading.Tasks;
 namespace Myth {
  static class Program {
   [System.Runtime.InteropServices.DllImport("user32.dll")]static extern bool SetProcessDPIAware();
-  [STAThread] static void Main() {SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);bool created;using(var mutex=new Mutex(true,"Local\\1000year-Launcher",out created)){if(!created){MessageBox.Show("런처가 이미 실행 중입니다.");return;}Application.Run(new Launcher());}}
+  [STAThread] static void Main(string[] args) {if(args.Length==3&&args[0]=="--replay-watch"){Replays.Watch(Int32.Parse(args[1]),args[2]);return;}SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);bool created;using(var mutex=new Mutex(true,"Local\\1000year-Launcher",out created)){if(!created){MessageBox.Show("런처가 이미 실행 중입니다.");return;}Application.Run(new Launcher());}}
  }
  public sealed class Launcher:Form {
-  Settings settings=Core.Load();TextBox path;ComboBox mode;CheckBox full,auto;Label status;Button play,update;bool busy;CancellationTokenSource stop=new CancellationTokenSource();
+  Settings settings=Core.Load();TextBox path;ComboBox mode;CheckBox full,auto,record;Label status;Button play,update,replays;bool busy;CancellationTokenSource stop=new CancellationTokenSource();
   public Launcher() {
-   Text="천년의신화 런처 · "+Core.Version;ClientSize=new Size(720,470);MinimumSize=Size;MaximumSize=Size;StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(23,29,35);ForeColor=Color.FromArgb(236,229,214);Font=new Font("맑은 고딕",10);
+   Text="천년의신화 런처 · "+Core.Version;ClientSize=new Size(720,540);MinimumSize=Size;MaximumSize=Size;StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(23,29,35);ForeColor=Color.FromArgb(236,229,214);Font=new Font("맑은 고딕",10);
    Controls.Add(new Label{Text="천년의신화",Font=new Font("맑은 고딕",27,FontStyle.Bold),Location=new Point(30,22),Size=new Size(480,58)});
    Controls.Add(new Label{Text="MILLENNIUM MYTH  /  V1.070KR",ForeColor=Color.FromArgb(190,157,98),Location=new Point(34,84),Size=new Size(500,25)});
    Controls.Add(new Label{Text="게임 설치 폴더",Location=new Point(34,126),Size=new Size(200,24)});
@@ -30,14 +30,16 @@ namespace Myth {
    play=Button("게임 시작",34,333,270);play.Height=52;play.BackColor=Color.FromArgb(162,119,54);play.Font=new Font(Font,FontStyle.Bold);play.Click+=(s,e)=>Launch();
    update=Button("업데이트 확인",320,333,176);update.Height=52;update.Click+=async(s,e)=>await CheckUpdate();
    var notes=Button("패치노트",512,333,176);notes.Height=52;notes.Click+=(s,e)=>Process.Start(new ProcessStartInfo("https://github.com/japanoxx-afk/1000year/releases"){UseShellExecute=true});
-   status=new Label{Text="단축키: . 쉬는 일꾼 / ` 군사 유닛 / Tab 영웅 전체 선택",Location=new Point(34,405),Size=new Size(654,54),ForeColor=Color.FromArgb(189,198,205)};Controls.Add(status);
+   record=new CheckBox{Text="경기 리플레이 기록",Location=new Point(34,402),Size=new Size(300,30),Checked=settings.RecordReplay};Controls.Add(record);
+   replays=Button("리플레이 목록",438,399,250);replays.Click+=(s,e)=>new ReplayLibrary(path.Text,full.Checked).Show(this);
+   status=new Label{Text="단축키: . 쉬는 일꾼 / ` 군사 유닛 / Tab 영웅 전체 선택",Location=new Point(34,460),Size=new Size(654,65),ForeColor=Color.FromArgb(189,198,205)};Controls.Add(status);
    Shown+=async(s,e)=>{if(auto.Checked)await CheckUpdate();};FormClosing+=(s,e)=>{if(busy){e.Cancel=true;return;}Save();stop.Cancel();};
   }
   Button Button(string text,int x,int y,int width) {var b=new Button{Text=text,Location=new Point(x,y),Size=new Size(width,34),FlatStyle=FlatStyle.Flat,BackColor=Color.FromArgb(44,54,64),ForeColor=ForeColor};Controls.Add(b);return b;}
-  void Save(){settings.GameDirectory=path.Text;settings.Mode=mode.SelectedIndex;settings.Fullscreen=full.Checked;settings.AutoUpdate=auto.Checked;try{Core.Save(settings);}catch(Exception ex){Core.Log(ex.ToString());}}
+  void Save(){settings.GameDirectory=path.Text;settings.Mode=mode.SelectedIndex;settings.Fullscreen=full.Checked;settings.AutoUpdate=auto.Checked;settings.RecordReplay=record.Checked;try{Core.Save(settings);}catch(Exception ex){Core.Log(ex.ToString());}}
   void Say(string s){status.Text=s;Core.Log(s);}
-  void SetBusy(bool b){busy=b;play.Enabled=update.Enabled=!b;path.Enabled=mode.Enabled=full.Enabled=!b;}
-  void Launch(){try{Save();if(Core.GameRunning(path.Text))throw new IOException("선택한 폴더의 게임이 이미 실행 중입니다.");string exe=Core.Prepare(path.Text,mode.SelectedIndex,full.Checked);Process.Start(new ProcessStartInfo(exe){WorkingDirectory=Path.GetFullPath(path.Text),UseShellExecute=false});Say("게임을 실행했습니다. 설정은 다음 실행부터 적용됩니다.");}catch(Exception ex){Say("실행 실패: "+ex.Message);MessageBox.Show(this,ex.Message,"게임 실행",MessageBoxButtons.OK,MessageBoxIcon.Warning);}}
+  void SetBusy(bool b){busy=b;play.Enabled=update.Enabled=replays.Enabled=!b;path.Enabled=mode.Enabled=full.Enabled=record.Enabled=!b;}
+  void Launch(){try{Save();if(Core.GameRunning(path.Text))throw new IOException("선택한 폴더의 게임이 이미 실행 중입니다.");string exe=Core.Prepare(path.Text,mode.SelectedIndex,full.Checked);if(record.Checked)Replays.Record(exe,mode.SelectedIndex,message=>{Core.Log(message);if(!IsDisposed&&IsHandleCreated)BeginInvoke((Action)(()=>Say(message)));});else Process.Start(new ProcessStartInfo(exe){WorkingDirectory=Path.GetFullPath(path.Text),UseShellExecute=false});Say(record.Checked?"게임을 실행했습니다. 게임 종료 시 첫 경기의 리플레이를 저장합니다.":"게임을 실행했습니다. 설정은 다음 실행부터 적용됩니다.");}catch(Exception ex){Say("실행 실패: "+ex.Message);MessageBox.Show(this,ex.Message,"게임 실행",MessageBoxButtons.OK,MessageBoxIcon.Warning);}}
   async Task CheckUpdate(){if(busy)return;SetBusy(true);Save();try{if(Core.GameRunning(path.Text)){Say("게임 종료 후 업데이트를 확인하세요.");return;}Say("최신 버전을 확인하고 있습니다…");ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;using(var client=new HttpClient()){client.DefaultRequestHeaders.UserAgent.ParseAdd("1000year-Launcher/"+Core.Version);string session=Path.Combine(Core.UserHome,"Updates",Guid.NewGuid().ToString("N"));string package=await Updates.Prepare(client,Core.Version,session,r=>true,Say,stop.Token);if(package!=null){await Updates.StartInstaller(package,Core.Home,Path.GetFileName(Application.ExecutablePath),Process.GetCurrentProcess().Id,stop.Token);SetBusy(false);Application.Exit();}}}catch(Exception ex){Say("업데이트 확인 실패 · 게임은 실행할 수 있습니다. "+ex.Message);}finally{SetBusy(false);}}
  }
 }
