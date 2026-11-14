@@ -11,8 +11,7 @@ parser.add_argument('--wide',action='store_true',help='1280x720 internal 16:9 mo
 args=parser.parse_args()
 W,H=(1280,720) if args.wide else (1024,768)
 VW=W-128
-DX,DY=W-640,(H-480)//2
-UP=H-480-DY
+DX,DY=W-640,H-480
 source=pathlib.Path(args.source).read_bytes()
 assert hashlib.sha256(source).hexdigest()=='1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf', 'Unsupported executable'
 p=pefile.PE(data=source);b=bytearray(source);edits=[]
@@ -71,15 +70,15 @@ def hook(addr,length,code):
  target=va+cursor;blob=asm(target,code);b[raw+cursor:raw+cursor+len(blob)]=blob;cursor=(cursor+len(blob)+15)&~15
  patch(addr,asm(addr,'jmp '+hex(target))+b'\x90'*(length-5),'HD trampoline')
 cursor=0
-# Background remains a 640x480 resource. Blit centered vertically at the right edge, preserving source pitch.
+# Background remains a 640x480 resource. Blit into the lower-right corner, preserving source pitch.
 hook(0x46c503,5,'mov eax,640; jmp 0x46c508')
-hook(0x46c546,6,f'mov dword ptr [esp],{DY}; push {DX}; push edx; call dword ptr [edi+0x1c]; jmp 0x46c54c')
+hook(0x46c546,6,f'push {DX}; push edx; call dword ptr [edi+0x1c]; jmp 0x46c54c')
 d(0x49de72,467+DX,'minimap shared x')
 d(0x49de79,385+DY,'minimap shared y')
 # Mini-map is drawn into the original-coordinate background surface before that surface is translated.
-hook(0x46c247,5,f'sub dword ptr [0x7a2ce8],{DX}; add dword ptr [0x7a2cec],{UP}; call 0x46c460; sub dword ptr [0x7a2cec],{UP}; add dword ptr [0x7a2ce8],{DX}; jmp 0x46c24c')
+hook(0x46c247,5,f'sub dword ptr [0x7a2ce8],{DX}; call 0x46c460; add dword ptr [0x7a2ce8],{DX}; jmp 0x46c24c')
 # Transparent HUD-background pixel hit testing maps both display axes back to the original surface.
-hook(0x468140,6,f'sub dword ptr [esp+4],{DX}; add dword ptr [esp+8],{UP}; mov edx,dword ptr [0xcecc60]; jmp 0x468146')
+hook(0x468140,6,f'sub dword ptr [esp+4],{DX}; mov edx,dword ptr [0xcecc60]; jmp 0x468146')
 # Retain original menu resolution. Battle initialization switches the renderer and surfaces.
 d(0x4dec88,2,'native menu mode')
 for a,x in [(0x4aedd3,640),(0x4aedd8,480),(0x47158c,480),(0x471591,640)]:d(a,x,'native menu dimensions')
@@ -103,34 +102,7 @@ for i in md.disasm(p.get_data(0x47fa10-0x400000,0x47fe3e-0x47fa10),0x47fa10):
 # on a mode change rather than overwriting its pointer with an empty surface.
 hook(0x41c88d,6,'cmp dword ptr [0x651510],0; jne 0x41c8c2; push 0; push 1; push 12; jmp 0x41c893')
 # Resource icons and numeric text retain their original x=230 layout.
-origin=va+0x2400
-# Center the associated bottom hint using the selected font's actual text extent.
-hook(0x431687,20,f"""
-pushad
-mov ebx,dword ptr [esp+0x2c]
-sub esp,8
-mov dword ptr [esp],0
-mov ecx,esp
-push ecx
-push eax
-push esi
-push ebx
-call dword ptr [0x4d0040]
-mov eax,{W}
-sub eax,dword ptr [esp]
-sar eax,1
-mov dword ptr [{origin+4}],eax
-add esp,8
-popad
-mov edx,dword ptr [esp+0xc]
-push eax
-push esi
-push {H-35}
-push dword ptr [{origin+4}]
-push edx
-call dword ptr [0x4d0028]
-jmp 0x43169b
-""")
+# Bottom hint retains its original left x=50; only screen-bottom anchoring remains.
 assert cursor<0x2000
 assert 0x10000+VW*H<=0x100000
 # Refresh canonical recipe after the final hook.

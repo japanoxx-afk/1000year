@@ -6,7 +6,7 @@ from unicorn import Uc,UC_ARCH_X86,UC_MODE_32
 from unicorn.x86_const import *
 name=sys.argv[3] if len(sys.argv)>3 else 'hd'
 W,H=(1280,720) if name=='wide' else (1024,768)
-VW=W-128;DX=W-640;DY=(H-480)//2;UP=H-480-DY
+VW=W-128;DX=W-640;DY=H-480
 r=json.loads(pathlib.Path('compat/'+name+'.json').read_text())
 s=pathlib.Path(sys.argv[1]).read_bytes();assert hashlib.sha256(s).hexdigest()==r['SourceSHA256']
 b=bytearray(s)
@@ -46,7 +46,7 @@ print('PASS mini-map shared position reset is idempotent')
 # Test the background translation trampoline restores the original return path.
 put(0xcecc60,480);assert run(0x468140,(900,700),stop=0x468146)==0
 assert struct.unpack('<I',u.mem_read(0x208004,4))[0]==900-DX
-assert struct.unpack('<I',u.mem_read(0x208008,4))[0]==700+UP
+assert struct.unpack('<I',u.mem_read(0x208008,4))[0]==700
 print('PASS HUD transparency hit test maps display coordinates to source coordinates')
 
 # The complete resource renderer is byte-for-byte identical to the original.
@@ -60,9 +60,9 @@ assert run(0x49d900,(mx+80,my+40,0x601000,0x601004),0x7a2ce8)==20
 assert u.reg_read(UC_X86_REG_EAX)==1
 assert struct.unpack('<H',u.mem_read(0x601000,2))[0]==37
 assert struct.unpack('<H',u.mem_read(0x601004,2))[0]==61
-assert run(0x49d900,(mx+80,my+40+UP,0x601000,0x601004),0x7a2ce8)==20
+assert run(0x49d900,(mx+80,my+40-(H-480)//2,0x601000,0x601004),0x7a2ce8)==20
 assert u.reg_read(UC_X86_REG_EAX)==0
-print('PASS relocated minimap click projects correctly; former location is rejected')
+print('PASS relocated minimap click projects correctly; previous centered location is rejected')
 
 # Stub GDI measurement and capture TextOut arguments while executing the hint hook.
 from unicorn import UC_HOOK_CODE
@@ -82,6 +82,6 @@ def gdi(uc,address,size,data):
 hook=u.hook_add(UC_HOOK_CODE,gdi)
 u.reg_write(UC_X86_REG_ESI,0x601000);u.reg_write(UC_X86_REG_EAX,4)
 assert run(0x431687,(0,0,123),stop=0x43169b)==0
-assert seen==[(123,(W-42)//2,H-35,0x601000,4)],seen
+assert seen==[(123,50,H-35,0x601000,4)],seen
 u.hook_del(hook)
-print('PASS centered hint uses measured text width and preserves the GDI call stack:',name)
+print('PASS original left-aligned hint and GDI call stack:',name)
