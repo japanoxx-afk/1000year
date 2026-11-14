@@ -102,6 +102,34 @@ assert run(0x4652a0,(0x209000,0x209004,1,1,0),ecx=a)==24
 assert u.reg_read(UC_X86_REG_EAX)==0
 u.hook_del(h)
 print('PASS original spawn search prefers all four rally directions and refuses blocked exits')
+u.mem_write(0x47c580,bytes.fromhex('c22000'))
+u.mem_write(0x483730,bytes.fromhex('c20800'))
+u.mem_write(0x4835b0,bytes.fromhex('c20800'))
+def production_collision(uc,addr,size,data):
+ if addr not in [0x47c3c0,0x47c580,0x483730,0x4835b0]:return
+ sp=uc.reg_read(UC_X86_REG_ESP);x,y=struct.unpack('<II',uc.mem_read(sp+4,8))
+ x=x&65535;y=y&65535
+ valid=0<=x<160 and 0<=y<160 and (abs(x-50)>=2 or abs(y-50)>=3) and (x,y) not in blocked
+ uc.reg_write(UC_X86_REG_EAX,1 if addr==0x483730 else (int(not valid) if addr==0x4835b0 else int(valid)))
+h=u.hook_add(UC_HOOK_CODE,production_collision)
+for entry,args,stack in [(0x4652a0,(0x209000,0x209004,1,1,0),24),(0x417880,(0x209000,0x209004,1,1),20),(0x417780,(0x209000,0x209004,1,1),20)]:
+ for target in [(50,0),(50,159),(0,50),(159,50)]:
+  blocked.clear();word(a+0x63c,target[0]);word(a+0x63e,target[1])
+  assert run(entry,args,ecx=a)==stack
+  assert u.reg_read(UC_X86_REG_EAX)==1
+  x=struct.unpack('<h',u.mem_read(0x209000,2))[0];y=struct.unpack('<h',u.mem_read(0x209004,2))[0]
+  assert (target[1]!=0 or y<50) and (target[1]!=159 or y>50),(hex(entry),target,x,y)
+  assert (target[0]!=0 or x<50) and (target[0]!=159 or x>50),(hex(entry),target,x,y)
+  assert (x-50)**2+(y-50)**2<=9,(entry,x,y)
+ blocked.update((x,y) for x in range(51,59) for y in range(42,59))
+ assert run(entry,args,ecx=a)==stack
+ assert u.reg_read(UC_X86_REG_EAX)==1
+ assert struct.unpack('<h',u.mem_read(0x209000,2))[0]<=50
+ blocked.update((x,y) for x in range(42,59) for y in range(42,59))
+ assert run(entry,args,ecx=a)==stack
+ assert u.reg_read(UC_X86_REG_EAX)==0
+u.hook_del(h)
+print('PASS all three production paths obey four rally directions around asymmetric footprints and stay nearby')
 for kwargs,want in [({},1),({'order':2},0),({'order':8},0),({'pending':2},0),({'queue':1},0),({'moving':1},0),({'owner':1},0),({'hp':0},0),({'visible':0},0),({'flags':0x1c8c2},0),({'flags':0x2005},2),({'flags':0x22005},6),({'flags':0x2001},1)]:
  unit(1,**kwargs);assert classify(1)==want,(kwargs,classify(1))
 print('PASS idle/working/moving/queued/dead/enemy/hidden/building/military/hero classification')

@@ -31,22 +31,33 @@ def install(g):
  test byte ptr [ecx+0x1d8],2; jz native;
  mov word ptr [esp+4],21;
  native: cmp word ptr [ecx+0x388],1; jmp 0x464298''')
- # Keep the original collision/connectivity search, but rank valid exits by
- # distance to the rally tile instead of distance to the building centre.
- g['d'](0x4652ad,0x7fffffff,'rally exit distance sentinel')
- hook(0x465341,38,'''push ebp;
+ # Score valid exits on the rally-facing half-plane before considering the
+ # nearest distance. Share this rule across all three native production paths.
+ exit_score=emit('''push ebp;
  movsx ebp,di; movsx edx,word ptr [esi+0x2a8]; sub ebp,edx;
  movsx ecx,bx; movsx edx,word ptr [esi+0x2aa]; sub ecx,edx;
  mov eax,ebp; imul eax,eax; imul ecx,ecx; add eax,ecx; shl eax,10;
  cmp word ptr [esi+0x63c],0; jl done; cmp word ptr [esi+0x63e],0; jl done;
+ push eax; xor eax,eax;
  movsx ecx,word ptr [esi+0x63c]; movsx edx,word ptr [esi+0x2a8];
- cmp ecx,edx; je y; jl left; sub eax,ebp; jmp y;
- left: add eax,ebp;
+ cmp ecx,edx; je y; jl left; add eax,ebp; jmp y;
+ left: sub eax,ebp;
  y: movsx ebp,bx; movsx edx,word ptr [esi+0x2aa]; sub ebp,edx;
- movsx ecx,word ptr [esi+0x63e]; cmp ecx,edx; je done; jl up;
- sub eax,ebp; jmp done; up: add eax,ebp;
- done: pop ebp; mov ecx,dword ptr [esp+0x14]; jmp 0x465367''')
- g['d'](0x4653a5,0x7fffffff,'rally exit failure sentinel')
+ movsx ecx,word ptr [esi+0x63e]; cmp ecx,edx; je side; jl up;
+ add eax,ebp; jmp side; up: sub eax,ebp;
+ side: mov edx,eax; pop eax; test edx,edx; jg facing;
+ add eax,0x100000; facing: sub eax,edx;
+ done: pop ebp; ret''')
+ for start,length,end,initial,final in [(0x465341,38,0x465367,0x4652ad,0x4653a5),(0x4178e5,38,0x41790b,0x41788d,0x417941)]:
+  g['d'](initial,0x7fffffff,'exit distance sentinel')
+  g['d'](final,0x7fffffff,'exit failure sentinel')
+  hook(start,length,f'call {exit_score}; mov ecx,dword ptr [esp+0x14]; jmp {end}')
+ g['d'](0x41778d,0x7fffffff,'air exit distance sentinel')
+ g['d'](0x417843,0x7fffffff,'air exit failure sentinel')
+ hook(0x4177e0,37,f'''push esi; push edi; push ebx;
+ mov esi,dword ptr [esp]; mov edi,dword ptr [esp+8]; mov ebx,dword ptr [esp+4];
+ call {exit_score}; pop ebx; pop edi; pop esi;
+ mov ecx,dword ptr [esp+0x14]; jmp 0x417805''')
  # Production's original rally dispatch: use the native harvest order on a
  # resource tile for workers, otherwise retain the native move order.
  rally=emit('''pushad;
