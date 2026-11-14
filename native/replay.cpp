@@ -20,7 +20,7 @@ struct Frame {State before,after; uint32_t result,count;};
 static_assert(sizeof(Frame)==40,"wire format");
 std::wstring root;
 bool playback=false,active=false,failed=false,privateSave=false,inside=false;
-bool completed=false;
+bool completed=false,hudOnly=false;
 bool dispatchEntered=false;
 FILE* output=nullptr;
 std::vector<Command> commands;
@@ -106,12 +106,44 @@ struct ObserverUnits {
 };
 // The original queue carries positional combat effects as well as UI alerts.
 // Keep positional sounds; only suppress non-positional observer notifications.
+uint32_t hiddenAudioEvents=0,effectPlays=0,playingEffects=0,heroEffectsSkipped=0;
+constexpr uintptr_t soundVisibilitySites[]={0x40338f,0x45fe7d,0x4032d8,0x403860,0x40399c,0x403a41,0x403bae,0x403e94,0x403f3d,0x403fe6,0x40409d,0x404146,0x4041ef,0x404374,0x404460,0x40472e,0x40482f,0x4048c2,0x405f76,0x4067bd,0x4094a8,0x40c516,0x40c621,0x40de3f,0x416a43,0x41920a,0x42df51,0x42e0b2,0x4589bb,0x45feaf,0x463e47};
+int __fastcall observerSoundVisible(void* self,void*,int x,int y){
+ int hidden=((int(__thiscall*)(void*,int,int))0x42bc80)(self,x,y);
+ if(!playback||failed)return hidden;
+ int radius=mem<int32_t>(0x115e2fc)>=1024?24:17;
+ if(abs((int16_t)x-mem<int32_t>(0xca98ec))>radius||abs((int16_t)y-mem<int32_t>(0xca98f0))>radius)return 1;
+ if(hidden)++hiddenAudioEvents;return 0;
+}
+int __fastcall observerWavePlay(void* self,void*,int handle){
+ int result=((int(__thiscall*)(void*,int))0x4b8800)(self,handle);++effectPlays;
+ if(((int(__thiscall*)(void*,int))0x4b8710)(self,handle)==1)++playingEffects;return result;
+}
+uintptr_t heroEffectContinue=0x4905d6;
+__declspec(naked) void observerEffectDraw(){__asm {
+ mov eax,[esp+4]
+ cmp eax,150
+ jae original
+ imul eax,eax,68
+ cmp word ptr [eax+0xd41272],29
+ jne original
+ inc dword ptr [heroEffectsSkipped]
+ mov eax,1
+ ret
+ original:
+ mov eax,[esp+4]
+ mov ecx,eax
+ jmp [heroEffectContinue]
+}}
 uintptr_t soundQueueContinue=0x433567;
 __declspec(naked) void observerSoundQueue(){__asm {
+ cmp word ptr [esp+4],21
+ je suppressed
  cmp word ptr [esp+8],0
  jne original
  cmp word ptr [esp+12],0
  jne original
+ suppressed:
  mov eax,1
  ret
  original:
@@ -169,7 +201,7 @@ void drawResources(){
    }resourceSurface=surface;++resourceCommits;
 #ifdef MYTH_OBSERVER_CAMERA_TEST
    static unsigned missing=0;for(int row=0;row<148;++row)for(int x=0;x<430;++x){uint32_t value=raster[row*430+x]&0xffffff;if(value!=0xff00ff&&target[(row+32)*pitch+resourceLeft+x]!=(value?255:0))++missing;}
-   if(resourceCommits%60==0){FILE* f=_wfopen((root+L"\\observer-validation.txt").c_str(),L"wb");if(f){fprintf(f,"presentedPanels=%u missingGlyphPixels=%u panelLeft=%d screenWidth=%d\n",resourceCommits,missing,resourceLeft,width);for(unsigned i=0;i<8;++i)fprintf(f,"P%u draws=%u\n",i+1,observerDrawn[i]);fclose(f);}}
+   if(resourceCommits%60==0){FILE* f=_wfopen((root+L"\\observer-validation.txt").c_str(),L"wb");if(f){fprintf(f,"presentedPanels=%u missingGlyphPixels=%u panelLeft=%d screenWidth=%d\n",resourceCommits,missing,resourceLeft,width);fprintf(f,"hiddenAudio=%u waveCalls=%u playingEffects=%u heroEffectsSkipped=%u\n",hiddenAudioEvents,effectPlays,playingEffects,heroEffectsSkipped);for(unsigned i=0;i<8;++i)fprintf(f,"P%u draws=%u\n",i+1,observerDrawn[i]);fclose(f);}}
 #endif
   }unlockSurface(surface);
  }
@@ -206,6 +238,32 @@ uint32_t __fastcall observerMapUnits(void* self,void*){
  for(uintptr_t u:missing)observerUnitSprite((void*)u,nullptr);
  return result;
 }
+// The timer follows simulation ticks, so pauses freeze it and replay speed
+// advances the same match time faster without changing the displayed duration.
+uint32_t timerTickStep=0,timerLastTick=0;
+std::wstring elapsedLabel(uint32_t tick,uint32_t step){uint64_t seconds=(uint64_t)tick*step/1000;wchar_t value[64];if(seconds>=3600)swprintf_s(value,L"경과 %llu:%02llu:%02llu",seconds/3600,seconds/60%60,seconds%60);else swprintf_s(value,L"경과 %02llu:%02llu",seconds/60,seconds%60);return value;}
+std::vector<uint8_t> timerUnderlay;void* timerSurface=nullptr;int timerLeft=0,timerTop=0;
+void restoreTimer(){
+ if(!timerSurface||timerUnderlay.empty())return;uint8_t desc[124];if(lockSurface(timerSurface,desc)){
+  auto target=mem<uint8_t*>((uintptr_t)desc+36);int pitch=mem<int32_t>((uintptr_t)desc+16);
+  if(target&&pitch>=timerLeft+150)for(int y=0;y<20;++y)memcpy(target+(timerTop+y)*pitch+timerLeft,timerUnderlay.data()+y*150,150);unlockSurface(timerSurface);
+ }timerSurface=nullptr;timerUnderlay.clear();
+}
+void drawTimer(){
+ if(mem<uint16_t>(0x4dec90)!=3||failed||mem<int32_t>(0x115e304)!=8)return;
+ void* surface=mem<void*>(0x65181c);int width=mem<int32_t>(0x115e2fc);if(!surface||width<434||width>8192)return;
+ uint32_t tick=mem<uint32_t>(0xa6ea50);
+ if(!timerTickStep||tick<timerLastTick)timerTickStep=playback?tickMilliseconds:((uint32_t(__cdecl*)())0x466960)();timerLastTick=tick;
+ auto label=elapsedLabel(tick,timerTickStep);restoreTimer();
+ HDC dc=CreateCompatibleDC(nullptr);if(!dc)return;BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=150;info.bmiHeader.biHeight=-20;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;void* pixels=nullptr;
+ HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&pixels,nullptr,0);if(!bitmap){DeleteDC(dc);return;}
+ auto old=SelectObject(dc,bitmap);auto raster=(uint32_t*)pixels;std::fill(raster,raster+150*20,0x00ff00ff);
+ static HFONT font=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,HANGEUL_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,DEFAULT_PITCH,L"굴림");auto oldFont=font?SelectObject(dc,font):nullptr;SetBkMode(dc,TRANSPARENT);
+ SetTextColor(dc,RGB(0,0,0));TextOutW(dc,1,1,label.c_str(),(int)label.size());SetTextColor(dc,RGB(255,255,255));TextOutW(dc,0,0,label.c_str(),(int)label.size());GdiFlush();
+ timerLeft=width>=1024?width/2-54:8;timerTop=width>=1024?8:32;
+ uint8_t desc[124];if(lockSurface(surface,desc)){auto target=mem<uint8_t*>((uintptr_t)desc+36);int pitch=mem<int32_t>((uintptr_t)desc+16);if(target&&pitch>=width){timerUnderlay.resize(150*20);for(int row=0;row<20;++row){auto destination=target+(row+timerTop)*pitch+timerLeft;memcpy(timerUnderlay.data()+row*150,destination,150);for(int x=0;x<150;++x){auto value=raster[row*150+x]&0xffffff;if(value!=0xff00ff)destination[x]=value?255:0;}}timerSurface=surface;}unlockSurface(surface);}
+ if(oldFont)SelectObject(dc,oldFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
+}
 uint32_t __fastcall observerFog(void* self,void*){ObserverView view;return ((uint32_t(__thiscall*)(void*))0x47fa10)(self);}
 uint32_t __cdecl observerBackground(){ObserverView view;
 #ifdef MYTH_OBSERVER_CAMERA_TEST
@@ -214,7 +272,7 @@ uint32_t __cdecl observerBackground(){ObserverView view;
 auto result=((uint32_t(__cdecl*)())0x46bda0)();return result;}
 uint32_t __cdecl observerUnits(){ObserverView view;ObserverUnits units;auto result=((uint32_t(__cdecl*)())0x46be00)();return result;}
 uint32_t __cdecl observerSelection(){ObserverView view;auto result=((uint32_t(__cdecl*)())0x46bea0)();return result;}
-#ifdef MYTH_OBSERVER_CAMERA_TEST
+#if defined(MYTH_OBSERVER_CAMERA_TEST) || defined(MYTH_HUD_TEST)
 void dumpObserverFrame(){
  static unsigned rendered=0;++rendered;if(rendered!=60&&rendered!=200&&rendered!=400)return;
  void* surface=mem<void*>(0x65181c);void* palette=nullptr;RGBQUAD colors[256]{};PALETTEENTRY entries[256]{};
@@ -225,11 +283,11 @@ void dumpObserverFrame(){
  wchar_t name[64];swprintf_s(name,L"\\observer-frame-%u.bmp",rendered);FILE* f=_wfopen((root+name).c_str(),L"wb");if(f){BITMAPFILEHEADER header{};header.bfType=0x4d42;header.bfOffBits=14+40+1024;header.bfSize=header.bfOffBits+width*height;BITMAPINFOHEADER info{};info.biSize=40;info.biWidth=width;info.biHeight=-height;info.biPlanes=1;info.biBitCount=8;info.biSizeImage=width*height;fwrite(&header,14,1,f);fwrite(&info,40,1,f);fwrite(colors,1024,1,f);for(int row=0;row<height;++row)fwrite(pixels+row*pitch,width,1,f);fclose(f);}unlockSurface(surface);
 }
 #endif
-uint32_t __cdecl observerHud(){ObserverView view;drawResources();
-#ifdef MYTH_OBSERVER_CAMERA_TEST
+uint32_t __cdecl observerHud(){ObserverView view;drawResources();drawTimer();
+#if defined(MYTH_OBSERVER_CAMERA_TEST) || defined(MYTH_HUD_TEST)
  dumpObserverFrame();
 #endif
-auto result=((uint32_t(__cdecl*)())0x46c380)();restoreResources();return result;}
+auto result=((uint32_t(__cdecl*)())0x46c380)();restoreTimer();restoreResources();return result;}
 bool write(const void* p,size_t n){if(failed)return false;if(!output||ftell(output)<0||ftell(output)+n>128u*1024*1024||fwrite(p,1,n,output)!=n){fail("ERROR: replay write failed or size limit reached");return false;}return true;}
 bool read(void* p,size_t n){if(cursor>input.size()||n>input.size()-cursor){fail("ERROR: truncated replay");return false;}memcpy(p,input.data()+cursor,n);cursor+=n;return true;}
 void finish(){
@@ -428,6 +486,13 @@ uint32_t __cdecl advanceHook(){
 }
 void __cdecl bootstrap(){
  uint16_t state=mem<uint16_t>(0x4dec90);
+#ifdef MYTH_HUD_TEST
+ if(hudOnly&&(state==9||state==220)){
+  ((void(__cdecl*)())0x41f980)();((void(__cdecl*)())0x46afd0)();
+  if(!checkpointOperation(true)){fail("ERROR: HUD fixture restore failed");return;}
+  ((void(__cdecl*)(int))0x468b20)(mem<int16_t>(0xca5628));((int(__cdecl*)(int))0x469a40)(mem<uint8_t>(0xb137bc));mem<uint16_t>(0x4dec90)=3;return;
+ }
+#endif
  if(!playback&&active&&state!=3&&state!=22&&state!=23){finish();return;}
  if(playback&&active&&state!=3&&state!=22&&state!=23){
   if(cursor+4==input.size()&&mem<uint32_t>((uintptr_t)input.data()+cursor)==0xffffffff){cursor+=4;finish();}
@@ -497,11 +562,19 @@ bool jump(uintptr_t where,void* target,size_t length){
 bool install(){
  wchar_t dir[32768],mode[16];
  if(!GetEnvironmentVariableW(L"MYTH_REPLAY_DIR",dir,32768))return true;
- root=dir;GetEnvironmentVariableW(L"MYTH_REPLAY_MODE",mode,16);playback=!wcscmp(mode,L"play");
+ root=dir;GetEnvironmentVariableW(L"MYTH_REPLAY_MODE",mode,16);playback=!wcscmp(mode,L"play");hudOnly=!wcscmp(mode,L"hud");
  // The native CRT uses ANSI file names. A launcher-created short ASCII staging
  // directory is required; never silently replace an unrepresentable path.
  BOOL replaced=FALSE;
  if(!WideCharToMultiByte(CP_ACP,WC_NO_BEST_FIT_CHARS,(root+L"\\initial.dat").c_str(),-1,checkpoint,MAX_PATH,nullptr,&replaced)||replaced||strlen(checkpoint)>=120)return false;
+ if(hudOnly){
+  if(mem<uint8_t>(0x471fa8)!=0xe8||0x471fad+mem<int32_t>(0x471fa9)!=0x46c380)return false;
+  uint8_t call[5]={0xe8};mem<int32_t>((uintptr_t)call+1)=(int32_t)((uintptr_t)observerHud-0x471fad);if(!patch(0x471fa8,call,5))return false;
+#ifdef MYTH_HUD_TEST
+  if(!jump(0x470cd1,(void*)loopHook,7)||!jump(0x48d170,(void*)pathHook,5))return false;
+#endif
+  status("HUD_READY");return true;
+ }
  if(playback){
   FILE* f=_wfopen((root+L"\\commands.bin").c_str(),L"rb");if(!f)return false;
   fseek(f,0,SEEK_END);long n=ftell(f);rewind(f);
@@ -537,6 +610,12 @@ bool install(){
   for(uintptr_t address:{0x480c9c,0x480cad,0x480cc5,0x480cc9}){
    if(mem<uint8_t>(address)!=13)return false;uint8_t radius=24;if(!patch(address,&radius,1))return false;
   }
+  // Each site is a fog query whose branch bypasses only a positional sound.
+  for(uintptr_t site:soundVisibilitySites){if(mem<uint8_t>(site)!=0xe8||site+5+mem<int32_t>(site+1)!=0x42bc80)return false;uint8_t soundCall[5]={0xe8};mem<int32_t>((uintptr_t)soundCall+1)=(int32_t)((uintptr_t)observerSoundVisible-site-5);if(!patch(site,soundCall,5))return false;}
+  if(memcmp((void*)0x4905d0,"\x8b\x44\x24\x04\x8b\xc8",6)||!jump(0x4905d0,(void*)observerEffectDraw,6))return false;
+  if(mem<uint8_t>(0x433622)!=17||mem<uint8_t>(0x433637)!=17)return false;uint8_t radius=24;if(!patch(0x433622,&radius,1)||!patch(0x433637,&radius,1))return false;
+  if(mem<uint8_t>(0x431ca4)!=0xe8||0x431ca9+mem<int32_t>(0x431ca5)!=0x4b8800)return false;
+  uint8_t wave[5]={0xe8};mem<int32_t>((uintptr_t)wave+1)=(int32_t)((uintptr_t)observerWavePlay-0x431ca9);if(!patch(0x431ca4,wave,5))return false;
   // Filter the shared sound queue instead of disabling every effect sound.
   if(!jump(0x433560,(void*)observerSoundQueue,7)||!patch(0x41fb50,"\xb8\x01\x00\x00\x00\xc3",6)||!patch(0x431330,"\xb8\x01\x00\x00\x00\xc3",6))return false;
  }
@@ -545,6 +624,7 @@ bool install(){
    uint8_t code[5]={0xe8};mem<int32_t>((uintptr_t)code+1)=(int32_t)(site.second-site.first-5);if(!patch(site.first,code,5))return false;
   }
  }
+ if(!playback){if(mem<uint8_t>(0x471fa8)!=0xe8||0x471fad+mem<int32_t>(0x471fa9)!=0x46c380)return false;uint8_t hud[5]={0xe8};mem<int32_t>((uintptr_t)hud+1)=(int32_t)((uintptr_t)observerHud-0x471fad);if(!patch(0x471fa8,hud,5))return false;}
  if(!jump(0x470cd1,(void*)loopHook,7)||!patch(0x46c6a9,timer,5)||!patch(0x46c69c,call,5)||!jump(0x48d170,(void*)pathHook,5)||
     !jump(0x4353a1,(void*)packetHook,6)||!jump(0x435356,(void*)queueHook,7)||!jump(0x46c5a0,(void*)advanceHook,8))return false;
  status("READY");return true;

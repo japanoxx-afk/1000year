@@ -35,6 +35,10 @@ int main(){
  // Exercise the real x86 sound filter: positional combat reaches native queue.
  soundQueueContinue=(uintptr_t)soundFixture;auto sound=(int(__cdecl*)(int,int,int))observerSoundQueue;
  assert(sound(20,0,0)==1&&positionalSounds==0);assert(sound(20,12,17)==42&&positionalSounds==1);assert(sound(20,0,17)==42&&positionalSounds==2);
+ assert(sound(21,12,17)==1&&positionalSounds==2); // no hero arrival chime
+ heroEffectContinue=(uintptr_t)soundFixture;auto effect=(int(__cdecl*)(int))observerEffectDraw;
+ mem<uint16_t>(0xd41272+3*68)=29;assert(effect(3)==1&&heroEffectsSkipped==1);mem<uint16_t>(0xd41272+3*68)=4;assert(effect(3)==42&&heroEffectsSkipped==1);
+ assert(elapsedLabel(0,50)==L"경과 00:00"&&elapsedLabel(1200,50)==L"경과 01:00"&&elapsedLabel(72000,50)==L"경과 1:00:00");
  for(unsigned id=30;id<=32;++id)mem<uint16_t>(0xa79620+id*2)=0;
  playback=false;{ObserverView view;assert(mem<uint8_t>(0xa7d4a6)==1);}
  memset((void*)0x7a0000,0,0x20000);mem<uint8_t>(0xb137bc)=1;mem<int32_t>(0xb137bc+0x14)=12345;mem<int32_t>(0xb137bc+0x18)=67890;mem<int32_t>(0xb137bc+0x1c)=4;mem<int16_t>(0xb137bc+0x1b5c)=20;mem<int16_t>(0xb137bc+0x1b62)=1600;
@@ -48,6 +52,9 @@ int main(){
  mem<int32_t>(0x115e308)=640;drawResources();assert(resourceLeft==850&&fixturePixels==firstImage);restoreResources();assert(fixturePixels==terrain);
  // Updated numbers start with the clean terrain, leaving no previous glyphs.
  mem<int32_t>(0xb137bc+0x14)=1;drawResources();assert(fixturePixels!=firstImage);restoreResources();assert(fixturePixels==terrain);mem<int32_t>(0xb137bc+0x14)=12345;
+ // Timer works with recording disabled, without enabling observer vision.
+ playback=false;hudOnly=true;active=false;mem<uint16_t>(0x4dec90)=3;mem<uint32_t>(0xa6ea50)=1200;timerTickStep=50;timerLastTick=1200;
+ drawTimer();assert(timerLeft==586&&timerTop==8&&fixturePixels!=terrain);auto timerFrame=fixturePixels;restoreTimer();assert(fixturePixels==terrain);drawTimer();assert(fixturePixels==timerFrame);restoreTimer();assert(fixturePixels==terrain);hudOnly=false;
  mem<void*>(0x65181c)=nullptr;
  auto rows=playerResources();assert(rows.size()==1&&rows[0].rice==12345&&rows[0].wood==67890&&rows[0].population==24&&rows[0].limit==1600);
  memset((void*)0xb10000,0,0x30000);active=false;
@@ -87,5 +94,5 @@ int main(){
  // Strict bounded parsing accepts no truncated record, even with an oversized request.
  failed=false;input={1,2,3,4};cursor=0;uint32_t n=0;assert(read(&n,4));assert(n==0x04030201);
  assert(!read(&n,4)&&failed);
- std::cout<<"PASS: raw/derived fog restoration, enemy/dead/embarked visibility, indexed panel stability/clean restoration across pitch changes, positional combat audio, resource rows, x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
+ std::cout<<"PASS: hero arrival visuals/chime suppression, replay/live HUD timer, raw/derived fog restoration, enemy/dead/embarked visibility, indexed panel stability/clean restoration across pitch changes, positional combat audio, resource rows, x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
 }

@@ -21,6 +21,7 @@ namespace Myth {
   }
   static string Session(){string dir=Path.Combine(Core.UserHome,"R",Guid.NewGuid().ToString("N").Substring(0,12));Directory.CreateDirectory(dir);return dir;}
   static string Engine(){byte[] bytes=Core.Resource("Myth.ReplayEngine");string dir=Path.Combine(Core.UserHome,"Engine",Core.HashBytes(bytes).Substring(0,12));Directory.CreateDirectory(dir);string path=Path.Combine(dir,"MythReplay.dll");if(!File.Exists(path)||Core.Hash(path)!=Core.HashBytes(bytes))File.WriteAllBytes(path,bytes);return path;}
+  public static Process PlayGame(string executable){return ReplayProcess.Start(executable,Engine(),Session(),false,"hud");}
   public static Process Record(string executable,int mode,Action<string> notice){
    string session=Session(),engine=Engine();
    var info=new ReplayInfo{Mode=mode,RecordedAt=DateTime.UtcNow.ToString("o"),GameSHA256=Core.Hash(Path.Combine(Path.GetDirectoryName(executable),"MMyth.exe")),PatchSHA256=Core.Hash(executable),EngineSHA256=Core.Hash(engine)};

@@ -15,12 +15,12 @@ namespace Myth {
   [DllImport("kernel32.dll")]static extern uint WaitForSingleObject(IntPtr handle,uint timeout);
   [DllImport("kernel32.dll")]static extern bool GetExitCodeThread(IntPtr thread,out uint code);
   [DllImport("kernel32.dll")]static extern bool CloseHandle(IntPtr handle);
-  public static Process Start(string executable,string engine,string session,bool playback) {
+  public static Process Start(string executable,string engine,string session,bool playback,string mode=null) {
    if(IntPtr.Size!=4)throw new InvalidOperationException("Replay helper must be x86.");
    executable=Path.GetFullPath(executable);engine=Path.GetFullPath(engine);session=Path.GetFullPath(session);
    Directory.CreateDirectory(session);
    var start=new ProcessStartInfo(executable){WorkingDirectory=Path.GetDirectoryName(executable),UseShellExecute=false};
-   start.EnvironmentVariables["MYTH_REPLAY_DIR"]=session;start.EnvironmentVariables["MYTH_REPLAY_MODE"]=playback?"play":"record";
+   start.EnvironmentVariables["MYTH_REPLAY_DIR"]=session;start.EnvironmentVariables["MYTH_REPLAY_MODE"]=mode??(playback?"play":"record");
    var process=Process.Start(start);
    // The game is still in its menu; attach before a battle can run.
    try{if(!process.WaitForInputIdle(15000))throw new IOException("게임 초기화 시간을 초과했습니다.");Inject(process,engine);return process;}
