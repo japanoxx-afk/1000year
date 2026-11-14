@@ -49,9 +49,17 @@ assert struct.unpack('<I',u.mem_read(0x208004,4))[0]==900-DX
 assert struct.unpack('<I',u.mem_read(0x208008,4))[0]==700
 print('PASS HUD transparency hit test maps display coordinates to source coordinates')
 
-# The complete resource renderer is byte-for-byte identical to the original.
-assert p.get_data(0x48b870-base,0x269)==pefile.PE(data=s).get_data(0x48b870-base,0x269)
-print('PASS original resource icon and numeric layout restored')
+# Only the shared icon/text origin changes; all resource spacing remains original.
+expected=bytearray(pefile.PE(data=s).get_data(0x48b870-base,0x269))
+struct.pack_into('<I',expected,0x48b897-0x48b870,4)
+struct.pack_into('<I',expected,0x48b8bb-0x48b870,4)
+assert p.get_data(0x48b870-base,0x269)==bytes(expected)
+assert run(0x48b896,stop=0x48b89b)==-4
+assert struct.unpack('<I',u.mem_read(0x207ffc,4))[0]==4
+u.reg_write(UC_X86_REG_ESI,20)
+assert run(0x48b8b9,stop=0x48b8bf)==0
+assert u.reg_read(UC_X86_REG_ESI)==24
+print('PASS left-edge resource icon and numeric origin; existing spacing preserved')
 
 # Exercise the real minimap projection using its new shared screen origin.
 mx,my=467+DX,385+DY

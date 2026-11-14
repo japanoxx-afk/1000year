@@ -1,6 +1,6 @@
 {
   "SourceSHA256": "1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf",
-  "OutputSHA256": "df9a6664df4b1ae253f953ad32564e60afbf05b665fe1c37333b64928aae9da3",
+  "OutputSHA256": "ec5675428d5b56eff07c6572efbe49d78973c3596e876d800df6892b9404675e",
   "Edits": [
     {
       "Offset": 246,
@@ -601,6 +601,18 @@
       "Before": "d401",
       "After": "f402",
       "Note": "Verified HD patch offset 0x8b862"
+    },
+    {
+      "Offset": 571543,
+      "Before": "e6",
+      "After": "04",
+      "Note": "Verified HD patch offset 0x8b897"
+    },
+    {
+      "Offset": 571579,
+      "Before": "e6",
+      "After": "04",
+      "Note": "Verified HD patch offset 0x8b8bb"
     },
     {
       "Offset": 574848,
