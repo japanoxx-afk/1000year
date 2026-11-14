@@ -34,16 +34,18 @@ uint32_t frames=0;
 DWORD lastControl=0;
 bool paused=false,stepping=false;
 uint32_t speedKeys=0;
-uint32_t tickMilliseconds=60,speed=1;
-void setSpeedKeys(uint32_t down){uint32_t pressed=down&~speedKeys;speedKeys=down;if(pressed&1)speed=1;if(pressed&2)speed=2;if(pressed&4)speed=4;}
-DWORD lastPlaybackTick=0;
+uint32_t tickMilliseconds=60,speed=150; // percent: 150 means 1.5x
+void setSpeedKeys(uint32_t down){uint32_t pressed=down&~speedKeys;speedKeys=down;if(pressed&1)speed=150;if(pressed&2)speed=200;if(pressed&4)speed=400;}
+int64_t playbackClock=0,clockFrequency=0;
+int64_t counterNow(){LARGE_INTEGER value;QueryPerformanceCounter(&value);return value.QuadPart;}
+int64_t framePeriod(){return clockFrequency*tickMilliseconds*100/(1000*speed);}
 char checkpoint[MAX_PATH]{};
 WNDPROC previousWindowProc=nullptr;
-void writeSpeed(){FILE* f=_wfopen((root+L"\\control.txt").c_str(),L"wb");if(f){fprintf(f,"speed%u",speed);fclose(f);}}
+void writeSpeed(){FILE* f=_wfopen((root+L"\\control.txt").c_str(),L"wb");if(f){if(speed==150)fputs("speed1.5",f);else fprintf(f,"speed%u",speed/100);fclose(f);}}
 LRESULT CALLBACK replayWindowProc(HWND window,UINT message,WPARAM key,LPARAM data){
  if(playback&&!mem<uint32_t>(0xb9022c)&&(message==WM_KEYDOWN||message==WM_KEYUP)){
   unsigned value=key=='1'||key==VK_NUMPAD1?1:key=='2'||key==VK_NUMPAD2?2:key=='4'||key==VK_NUMPAD4?4:0;
-  if(value){if(message==WM_KEYDOWN){speed=value;writeSpeed();}return 0;}
+  if(value){if(message==WM_KEYDOWN){speed=value==1?150:value*100;writeSpeed();}return 0;}
  }
  return CallWindowProcA(previousWindowProc,window,message,key,data);
 }
@@ -71,6 +73,55 @@ State snapshot(){
  return s;
 }
 bool equal(const State&a,const State&b){return !memcmp(&a,&b,sizeof(a));}
+// Reveal only while deriving or drawing observer visuals. Restore the original
+// simulation visibility planes before any command/AI update or state check.
+uint8_t savedVisibility[8*0x6400];unsigned revealDepth=0;
+int16_t savedDayPhase=0;
+struct ObserverView {
+ bool enabled;
+ ObserverView():enabled(playback&&(active||completed)&&!failed){if(enabled&&revealDepth++==0){
+  memcpy(savedVisibility,(void*)0xa7d4a6,sizeof(savedVisibility));memset((void*)0xa7d4a6,0,sizeof(savedVisibility));
+  // Phase zero is the daylight render variant. Tile buffers CAA234/CAA238
+  // contain terrain data, not observer visibility, and must remain untouched.
+  savedDayPhase=mem<int16_t>(0xb2d85e);mem<int16_t>(0xb2d85e)=0;
+ }}
+ ~ObserverView(){if(enabled&&--revealDepth==0){memcpy((void*)0xa7d4a6,savedVisibility,sizeof(savedVisibility));mem<int16_t>(0xb2d85e)=savedDayPhase;}}
+};
+struct PlayerResources {unsigned slot;int rice,wood,population,limit;wchar_t name[32];};
+std::vector<PlayerResources> playerResources(){
+ std::vector<PlayerResources> rows;
+ for(unsigned i=0;i<8;++i){uintptr_t p=0xb137bc+i*0x33d4;unsigned nation=mem<uint8_t>(p);if(!nation||nation==6)continue;
+  PlayerResources r{i,mem<int32_t>(p+0x14),mem<int32_t>(p+0x18),mem<int16_t>(p+0x1b5c)+mem<int32_t>(p+0x1c),mem<int16_t>(p+0x1b62),{}};
+  char name[16]{};memcpy(name,(void*)(0x7a0d38+i*15),15);
+  MultiByteToWideChar(949,0,name,-1,r.name,32);rows.push_back(r);
+ }return rows;
+}
+void drawResources(){
+ if(!playback||(!active&&!completed)||failed)return;
+ void* surface=mem<void*>(0x65181c);if(!surface)return;
+ auto table=*(void***)surface;HDC dc=nullptr;
+ auto getDC=(HRESULT(WINAPI*)(void*,HDC*))table[17];auto releaseDC=(HRESULT(WINAPI*)(void*,HDC))table[26];
+ if(FAILED(getDC(surface,&dc))||!dc)return;
+ int saved=SaveDC(dc);SelectClipRgn(dc,nullptr);SetMapMode(dc,MM_TEXT);SetViewportOrgEx(dc,0,0,nullptr);SetWindowOrgEx(dc,0,0,nullptr);SetBkMode(dc,TRANSPARENT);
+ HFONT font=mem<HFONT>(0xcecc30);if(font)SelectObject(dc,font);
+ int width=mem<int32_t>(0x115e308),left=width-430;if(left<4)left=4;
+ // Legacy replays reserve 128 columns which the background never repaints.
+ // Clear only that non-terrain strip before drawing changing-width numbers.
+ int terrainWidth=mem<int32_t>(0x46bdca);if(terrainWidth>0&&terrainWidth<width){RECT unused{terrainWidth,32,width,180};FillRect(dc,&unused,(HBRUSH)GetStockObject(BLACK_BRUSH));}
+ auto text=[&](int x,int y,const wchar_t* value){int n=(int)wcslen(value);SetTextColor(dc,RGB(0,0,0));TextOutW(dc,x+1,y+1,value,n);SetTextColor(dc,RGB(255,255,255));TextOutW(dc,x,y,value,n);};
+ text(left,34,L"플레이어");text(left+150,34,L"쌀");text(left+235,34,L"나무");text(left+320,34,L"전비");
+ int y=50;for(const auto& r:playerResources()){
+  wchar_t label[64],value[64];swprintf_s(label,L"P%u %s",r.slot+1,r.name);text(left,y,label);
+  swprintf_s(value,L"%d",r.rice);text(left+150,y,value);swprintf_s(value,L"%d",r.wood);text(left+235,y,value);
+  swprintf_s(value,L"%d/%d",r.population,r.limit);text(left+320,y,value);y+=16;
+ }
+ if(saved)RestoreDC(dc,saved);releaseDC(surface,dc);
+}
+uint32_t __fastcall observerFog(void* self,void*){ObserverView view;return ((uint32_t(__thiscall*)(void*))0x47fa10)(self);}
+uint32_t __cdecl observerBackground(){ObserverView view;return ((uint32_t(__cdecl*)())0x46bda0)();}
+uint32_t __cdecl observerUnits(){ObserverView view;return ((uint32_t(__cdecl*)())0x46be00)();}
+uint32_t __cdecl observerSelection(){ObserverView view;return ((uint32_t(__cdecl*)())0x46bea0)();}
+uint32_t __cdecl observerHud(){ObserverView view;drawResources();return ((uint32_t(__cdecl*)())0x46c380)();}
 bool write(const void* p,size_t n){if(failed)return false;if(!output||ftell(output)<0||ftell(output)+n>128u*1024*1024||fwrite(p,1,n,output)!=n){fail("ERROR: replay write failed or size limit reached");return false;}return true;}
 bool read(void* p,size_t n){if(cursor>input.size()||n>input.size()-cursor){fail("ERROR: truncated replay");return false;}memcpy(p,input.data()+cursor,n);cursor+=n;return true;}
 void finish(){
@@ -129,7 +180,7 @@ void begin(){
   tickMilliseconds=((uint32_t(__cdecl*)())0x466960)();
   FILE* f=_wfopen((root+L"\\timing.txt").c_str(),L"wb");if(f){fprintf(f,"%u",tickMilliseconds);fclose(f);}
  }
- lastPlaybackTick=GetTickCount();
+ LARGE_INTEGER frequency;QueryPerformanceFrequency(&frequency);clockFrequency=frequency.QuadPart;playbackClock=counterNow();
 }
 void __cdecl capture(const Packet* packet,uint32_t player){
  if(!inside||failed||playback)return;
@@ -219,9 +270,9 @@ bool pauseRequested(){
   if(f){char text[16]{};fread(text,1,15,f);fclose(f);
    if(!strcmp(text,"pause"))paused=true;
    if(!strcmp(text,"play"))paused=false;
-   if(!strcmp(text,"speed1"))speed=1;
-   if(!strcmp(text,"speed2"))speed=2;
-   if(!strcmp(text,"speed4"))speed=4;
+   if(!strcmp(text,"speed1")||!strcmp(text,"speed1.5"))speed=150;
+   if(!strcmp(text,"speed2"))speed=200;
+   if(!strcmp(text,"speed4"))speed=400;
    if(!strcmp(text,"step")){paused=false;stepping=true;FILE* w=_wfopen((root+L"\\control.txt").c_str(),L"wb");if(w){fwrite("pause",1,5,w);fclose(w);}}
   }
  }
@@ -230,7 +281,7 @@ bool pauseRequested(){
 uint32_t __cdecl advanceHook(){
  if(completed)return playback?0:((uint32_t(__cdecl*)())advance)();
  if(failed)return playback?0:((uint32_t(__cdecl*)())advance)();
- if(playback&&pauseRequested())return 0;
+ if(playback&&pauseRequested()){playbackClock=counterNow();return 0;}
  if(!active)begin();
  if(failed)return playback?0:((uint32_t(__cdecl*)())advance)();
  if(!playback&&frames&&mem<uint32_t>(0xa6ea50)<frame.after.tick){finish();return ((uint32_t(__cdecl*)())advance)();}
@@ -243,7 +294,7 @@ uint32_t __cdecl advanceHook(){
   if(!read(commands.data(),commands.size()*sizeof(Command)))return 0;
   if(!equal(snapshot(),frame.before)){fail("ERROR: replay state mismatch before frame");return 0;}
   dispatchResult=frame.result;
-  if(frame.after.tick>frame.before.tick&&!stepping&&GetTickCount()-lastPlaybackTick<tickMilliseconds/speed){cursor=frameStart;return 0;}
+  if(frame.after.tick>frame.before.tick&&!stepping&&counterNow()-playbackClock<framePeriod()){cursor=frameStart;return 0;}
  }else {frame={};frame.before=snapshot();dispatchResult=1;}
  inside=true;dispatchEntered=false;
  uint32_t result=((uint32_t(__cdecl*)())advance)();
@@ -262,7 +313,7 @@ uint32_t __cdecl advanceHook(){
   uint32_t tag=1;write(&tag,4);write(&frame,sizeof(frame));write(commands.data(),commands.size()*sizeof(Command));
  }else return result;
  ++frames;if(playback&&stepping){paused=true;stepping=false;}
- if(playback&&after.tick>frame.before.tick)lastPlaybackTick=GetTickCount();
+ if(playback&&after.tick>frame.before.tick){playbackClock+=framePeriod();int64_t now=counterNow();if(now-playbackClock>framePeriod()*2)playbackClock=now;}
  if(output&&frames%300==0)fflush(output);
  if(frames%100==0){char text[80];sprintf_s(text,"%s %u %u",playback?"PLAYING":"RECORDING",frames,after.tick);status(text);}
  return result;
@@ -359,6 +410,8 @@ bool install(){
     memcmp((void*)0x46c69c,"\xe8\x2f\x8c\xfc\xff",5)||
     memcmp((void*)0x46c6a9,"\xe8\xf2\x00\x00\x00",5))return false;
  uintptr_t commandTarget=0x435045+mem<int32_t>(0x435041);
+ if(playback)for(auto call: {std::pair<uintptr_t,uintptr_t>{0x46c68d,0x47fa10},{0x471f02,0x46bda0},{0x471f62,0x46be00},{0x471f85,0x46bea0},{0x471fa8,0x46c380}})
+  if(mem<uint8_t>(call.first)!=0xe8||call.first+5+mem<int32_t>(call.first+1)!=call.second)return false;
  bool hdCommand=mem<uint8_t>(0x435040)==0xe9&&mem<uint8_t>(0x435045)==0x90&&commandTarget>=0x11d0000&&commandTarget<0x11d2000;
  if(memcmp((void*)0x435040,"\x81\xec\xb8\x00\x00\x00",6)&&!hdCommand)return false;
  advance=VirtualAlloc(nullptr,32,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);
@@ -369,6 +422,16 @@ bool install(){
  uint8_t call[5]={0xe8};mem<int32_t>((uintptr_t)call+1)=(int32_t)((uintptr_t)dispatch-0x46c6a1);
  uint8_t timer[5]={0xe8};mem<int32_t>((uintptr_t)timer+1)=(int32_t)((uintptr_t)timerGate-0x46c6ae);
  if(playback&&!patch(0x435040,"\xb8\x01\x00\x00\x00\xc3",6))return false;
+ if(playback){
+  if(memcmp((void*)0x433560,"\x66\x8b\x15\xa6\x72\x66\x00",7)||memcmp((void*)0x41fb50,"\x81\xec\xb0\x00\x00\x00",6)||memcmp((void*)0x431330,"\x81\xec\x88\x00\x00\x00",6))return false;
+  // UI notification enqueue and portrait renderer; combat audio is retained.
+  if(!patch(0x433560,"\xb8\x01\x00\x00\x00\xc3\x90",7)||!patch(0x41fb50,"\xb8\x01\x00\x00\x00\xc3",6)||!patch(0x431330,"\xb8\x01\x00\x00\x00\xc3",6))return false;
+ }
+ if(playback){
+  for(auto site: {std::pair<uintptr_t,uintptr_t>{0x46c68d,(uintptr_t)observerFog},{0x471f02,(uintptr_t)observerBackground},{0x471f62,(uintptr_t)observerUnits},{0x471f85,(uintptr_t)observerSelection},{0x471fa8,(uintptr_t)observerHud}}){
+   uint8_t code[5]={0xe8};mem<int32_t>((uintptr_t)code+1)=(int32_t)(site.second-site.first-5);if(!patch(site.first,code,5))return false;
+  }
+ }
  if(!jump(0x470cd1,(void*)loopHook,7)||!patch(0x46c6a9,timer,5)||!patch(0x46c69c,call,5)||!jump(0x48d170,(void*)pathHook,5)||
     !jump(0x4353a1,(void*)packetHook,6)||!jump(0x435356,(void*)queueHook,7)||!jump(0x46c5a0,(void*)advanceHook,8))return false;
  status("READY");return true;

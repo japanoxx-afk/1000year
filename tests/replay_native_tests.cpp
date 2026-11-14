@@ -4,10 +4,20 @@
 #include <iostream>
 // Reserve the game's low address range in this fixed-base test image, before
 // Windows chooses heap/stack addresses. The production adapter uses game data.
-volatile unsigned char fixtureAddressSpace[8*1024*1024];
+volatile unsigned char fixtureAddressSpace[12*1024*1024];
 int main(){
- speed=1;speedKeys=0;setSpeedKeys(2);assert(speed==2);speed=1;setSpeedKeys(2);assert(speed==1);setSpeedKeys(0);setSpeedKeys(4);assert(speed==4);setSpeedKeys(1);assert(speed==1);
+ speed=150;speedKeys=0;setSpeedKeys(2);assert(speed==200);speed=150;setSpeedKeys(2);assert(speed==150);setSpeedKeys(0);setSpeedKeys(4);assert(speed==400);setSpeedKeys(1);assert(speed==150);
+ clockFrequency=1000000;tickMilliseconds=50;assert(framePeriod()==33333);
  fixtureAddressSpace[0]=0;
+ memset((void*)0xa7d4a6,1,8*0x6400);playback=true;active=true;failed=false;
+ uint8_t nightLight[4]{0,0,0,0},nightShade[4]{3,3,3,3};mem<uint8_t*>(0xcaa234)=nightLight;mem<uint8_t*>(0xcaa238)=nightShade;mem<int16_t>(0xca5624)=2;mem<int16_t>(0xca5626)=2;mem<uint32_t>(0xca98f4+4)=2;mem<int16_t>(0xb2d85e)=5;
+ {ObserverView view;assert(mem<uint8_t>(0xa7d4a6)==0);{ObserverView nested;assert(revealDepth==2);}assert(mem<uint8_t>(0xa7d4a6+8*0x6400-1)==0);assert(nightLight[3]==0&&nightShade[3]==3&&mem<int16_t>(0xb2d85e)==0);}
+ assert(nightLight[3]==0&&nightShade[3]==3&&mem<int16_t>(0xb2d85e)==5);
+ assert(revealDepth==0&&mem<uint8_t>(0xa7d4a6)==1&&mem<uint8_t>(0xa7d4a6+8*0x6400-1)==1);
+ playback=false;{ObserverView view;assert(mem<uint8_t>(0xa7d4a6)==1);}
+ memset((void*)0x7a0000,0,0x20000);mem<uint8_t>(0xb137bc)=1;mem<int32_t>(0xb137bc+0x14)=12345;mem<int32_t>(0xb137bc+0x18)=67890;mem<int32_t>(0xb137bc+0x1c)=4;mem<int16_t>(0xb137bc+0x1b5c)=20;mem<int16_t>(0xb137bc+0x1b62)=1600;
+ auto rows=playerResources();assert(rows.size()==1&&rows[0].rice==12345&&rows[0].wood==67890&&rows[0].population==24&&rows[0].limit==1600);
+ memset((void*)0xb10000,0,0x30000);active=false;
  memset((void*)0xb10000,0,0x20000);
  memset((void*)0xa60000,0,0x20000);
  unsigned fixtureId=120;uintptr_t unit=0x7ca6e8+fixtureId*2308;
@@ -44,5 +54,5 @@ int main(){
  // Strict bounded parsing accepts no truncated record, even with an oversized request.
  failed=false;input={1,2,3,4};cursor=0;uint32_t n=0;assert(read(&n,4));assert(n==0x04030201);
  assert(!read(&n,4)&&failed);
- std::cout<<"PASS: x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
+ std::cout<<"PASS: observer visibility restoration, resource rows, x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
 }
