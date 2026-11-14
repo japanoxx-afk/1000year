@@ -23,8 +23,8 @@ namespace Myth {
    var browse=Button("찾아보기",594,153,94);browse.Click+=(s,e)=>{using(var dlg=new FolderBrowserDialog{Description="MMyth.exe가 있는 폴더를 선택하세요.",SelectedPath=path.Text}){if(dlg.ShowDialog()==DialogResult.OK)path.Text=dlg.SelectedPath;}};
    if(String.IsNullOrWhiteSpace(path.Text)){var guess=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),"Downloads","DGGL","Games","MMyth107_Win_231023");path.Text=File.Exists(Path.Combine(Core.Home,"MMyth.exe"))?Core.Home:guess;}
    Controls.Add(new Label{Text="화면 설정",Location=new Point(34,205),Size=new Size(180,24)});
-   mode=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Location=new Point(34,236),Size=new Size(380,32)};mode.Items.AddRange(new object[]{"640 × 480 · 원본 해상도","1024 × 768 · 화면 확대 (기존 시야)","1024 × 768 · 내부 해상도 (넓은 전장)"});mode.SelectedIndex=Math.Max(0,Math.Min(2,settings.Mode));Controls.Add(mode);
-   full=new CheckBox{Text="전체 화면 (4:3)",Location=new Point(438,238),Size=new Size(260,28),Checked=settings.Fullscreen};Controls.Add(full);
+   mode=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Location=new Point(34,236),Size=new Size(380,32)};mode.Items.AddRange(new object[]{"640 × 480 · 원본 해상도","1024 × 768 · 화면 확대 (기존 시야)","1024 × 768 · 내부 해상도 (넓은 전장)","1280 × 720 · 16:9 내부 해상도"});mode.SelectedIndex=Math.Max(0,Math.Min(3,settings.Mode));Controls.Add(mode);
+   full=new CheckBox{Text="전체 화면 (화면 비율 유지)",Location=new Point(438,238),Size=new Size(260,28),Checked=settings.Fullscreen};Controls.Add(full);
    auto=new CheckBox{Text="런처 시작 시 자동 업데이트",Location=new Point(34,284),Size=new Size(330,28),Checked=settings.AutoUpdate};Controls.Add(auto);
    var restore=Button("원래 그래픽 복원",438,282,250);restore.Click+=(s,e)=>{try{Core.RestoreGraphics(path.Text);Say("원래 그래픽 파일로 복원했습니다. 런처 실행 시 호환 설정이 다시 적용됩니다.");}catch(Exception ex){Say(ex.Message);}};
    play=Button("게임 시작",34,333,270);play.Height=52;play.BackColor=Color.FromArgb(162,119,54);play.Font=new Font(Font,FontStyle.Bold);play.Click+=(s,e)=>Launch();

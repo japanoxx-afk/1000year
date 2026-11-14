@@ -1,10 +1,10 @@
-param([string]$OutputDirectory='')
+﻿param([string]$OutputDirectory='')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $out=if($OutputDirectory){[IO.Path]::GetFullPath($OutputDirectory)}else{Join-Path $root 'dist'}
 New-Item -ItemType Directory -Force $out,(Join-Path $out 'compat') | Out-Null
 $csc=Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
-& $csc /nologo /target:winexe /platform:x86 /optimize+ /codepage:65001 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.Net.Http.dll /resource:"$root\scripts\apply-update.ps1,Myth.UpdateInstaller" /resource:"$root\compat\portable.json,Myth.PortableRecipe" /resource:"$root\compat\hd.json,Myth.HDRecipe" /resource:"$root\third-party\ddraw.dll,Myth.DDraw" /out:"$out\MythLauncher.exe" "$root\src\Core.cs" "$root\src\Launcher.cs" "$root\src\Updates.cs"
+& $csc /nologo /target:winexe /platform:x86 /optimize+ /codepage:65001 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.Net.Http.dll /resource:"$root\scripts\apply-update.ps1,Myth.UpdateInstaller" /resource:"$root\compat\portable.json,Myth.PortableRecipe" /resource:"$root\compat\hd.json,Myth.HDRecipe" /resource:"$root\compat\wide.json,Myth.WideRecipe" /resource:"$root\third-party\ddraw.dll,Myth.DDraw" /out:"$out\MythLauncher.exe" "$root\src\Core.cs" "$root\src\Launcher.cs" "$root\src\Updates.cs"
 if($LASTEXITCODE -ne 0){throw 'Compile failed'}
 $version=[regex]::Match((Get-Content "$root\src\Core.cs" -Raw),'Version="([^"]+)"').Groups[1].Value
 $entrypoint="MythLauncher-$version.exe"
