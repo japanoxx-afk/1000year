@@ -19,6 +19,59 @@ def classify(i):
  assert run(f['classify'])==4
  return u.reg_read(UC_X86_REG_EAX)
 put(0xcbdc3c,0)
+# Execute the native order receiver through the building rally hook.
+u.mem_write(0x431250,b'\xc3')
+a=unit(1,flags=0x10048c2,typeid=58)
+assert run(0x464290,(3,30|(40<<16),0,100,0),ecx=a)==24
+assert struct.unpack('<hh',u.mem_read(a+0x63c,4))==(30,40)
+a=unit(1)
+assert run(0x464290,(3,30|(40<<16),0,100,0),ecx=a)==24
+assert struct.unpack('<H',u.mem_read(a+0x388,2))[0]==3
+print('PASS native building ground orders set serialized rally coordinates; mobile orders preserved')
+# Capture production rally commands with the real map-resource predicate.
+saved=bytes(u.mem_read(0x4357b0,1));u.mem_write(0x4357b0,b'\xc3')
+issued=[]
+def rally_packet(uc,addr,size,data):
+ if addr==0x4357b0:
+  sp=uc.reg_read(UC_X86_REG_ESP)
+  issued.append(struct.unpack('<6I',uc.mem_read(sp+4,24)))
+h=u.hook_add(UC_HOOK_CODE,rally_packet)
+word(0xca5598+0x8c,160);word(0xca5598+0x8e,160)
+word(0xca5598+0x4ce0+(30*160+40)*2,1)
+for typeid in [4,7,20,21,23,31]:
+ unit(1,typeid=typeid)
+ assert run(f['rally'],(0x10001,30,40,1))==4
+ assert issued[-1][0:3]==(8,0x10001,30|(40<<16)),issued[-1]
+unit(1,flags=0x2005,typeid=2)
+assert run(f['rally'],(0x10001,30,40,1))==4
+assert issued[-1][0]==3
+unit(1)
+assert run(f['rally'],(0x10001,31,40,1))==4
+assert issued[-1][0]==3
+u.hook_del(h);u.mem_write(0x4357b0,saved);u.ctl_remove_cache(0x4357b0,0x4357c0)
+print('PASS all six worker types receive harvest on resource tiles; military/ground rallies retain movement')
+# Execute the original exit search, including its candidate validation calls.
+u.mem_write(0x47c3c0,bytes.fromhex('c22000'))
+blocked=set()
+def exit_collision(uc,addr,size,data):
+ if addr==0x47c3c0:
+  sp=uc.reg_read(UC_X86_REG_ESP);x,y=struct.unpack('<II',uc.mem_read(sp+4,8))
+  x=x&65535;y=y&65535
+  valid=0<=x<160 and 0<=y<160 and (abs(x-50)>=3 or abs(y-50)>=3) and (x,y) not in blocked
+  uc.reg_write(UC_X86_REG_EAX,int(valid))
+h=u.hook_add(UC_HOOK_CODE,exit_collision)
+a=unit(1,flags=0x10048c2,typeid=58);word(a+0x2a8,50);word(a+0x2aa,50)
+for target in [(50,0),(50,159),(0,50),(159,50)]:
+ word(a+0x63c,target[0]);word(a+0x63e,target[1])
+ assert run(0x4652a0,(0x209000,0x209004,1,1,0),ecx=a)==24
+ x=struct.unpack('<h',u.mem_read(0x209000,2))[0];y=struct.unpack('<h',u.mem_read(0x209004,2))[0]
+ assert (target[1]!=0 or y<50) and (target[1]!=159 or y>50)
+ assert (target[0]!=0 or x<50) and (target[0]!=159 or x>50),(target,x,y)
+blocked.update((x,y) for x in range(46,55) for y in range(46,55))
+assert run(0x4652a0,(0x209000,0x209004,1,1,0),ecx=a)==24
+assert u.reg_read(UC_X86_REG_EAX)==0
+u.hook_del(h)
+print('PASS original spawn search prefers all four rally directions and refuses blocked exits')
 for kwargs,want in [({},1),({'order':2},0),({'order':8},0),({'pending':2},0),({'queue':1},0),({'moving':1},0),({'owner':1},0),({'hp':0},0),({'visible':0},0),({'flags':0x1c8c2},0),({'flags':0x2005},2),({'flags':0x22005},6),({'flags':0x2001},1)]:
  unit(1,**kwargs);assert classify(1)==want,(kwargs,classify(1))
 print('PASS idle/working/moving/queued/dead/enemy/hidden/building/military/hero classification')

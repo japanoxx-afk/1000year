@@ -3,6 +3,43 @@ def install(g):
  asm,b,raw,va,hook,W=(g[n] for n in ('asm','b','raw','va','hook','W'))
  def emit(code):
   at=va+g['cursor'];blob=asm(at,code);off=raw+g['cursor'];b[off:off+len(blob)]=blob;g['cursor']=(g['cursor']+len(blob)+15)&~15;return at
+ # Feed ordinary ground orders for buildings through the game's native rally
+ # command (21). Native +63C/+63E fields are serialized with the unit and read
+ # by the production completion path at 0040E5F1.
+ hook(0x464290,8,'''cmp word ptr [esp+4],3; je ground; cmp word ptr [esp+4],8; jne native; ground:
+ test byte ptr [ecx+0x1d8],2; jz native;
+ mov word ptr [esp+4],21;
+ native: cmp word ptr [ecx+0x388],1; jmp 0x464298''')
+ # Keep the original collision/connectivity search, but rank valid exits by
+ # distance to the rally tile instead of distance to the building centre.
+ g['d'](0x4652ad,0x7fffffff,'rally exit distance sentinel')
+ hook(0x465341,7,'''movsx edx,word ptr [esi+0x63e];
+ cmp edx,0; jl centre; cmp word ptr [esi+0x63c],0; jl centre;
+ jmp 0x465348;
+ centre: movsx edx,word ptr [esi+0x2aa]; jmp 0x465348''')
+ hook(0x46534d,7,'''movsx edx,word ptr [esi+0x63c];
+ cmp edx,0; jl centre; cmp word ptr [esi+0x63e],0; jl centre;
+ jmp 0x465354;
+ centre: movsx edx,word ptr [esi+0x2a8]; jmp 0x465354''')
+ g['d'](0x4653a5,0x7fffffff,'rally exit failure sentinel')
+ # Production's original rally dispatch: use the native harvest order on a
+ # resource tile for workers, otherwise retain the native move order.
+ rally=emit('''pushad;
+ movzx eax,word ptr [esp+36]; imul eax,eax,2308;
+ lea edi,[eax+0x7ca6e8]; movzx eax,byte ptr [edi+0x75];
+ cmp eax,4; je worker; cmp eax,7; je worker;
+ cmp eax,20; je worker; cmp eax,21; je worker;
+ cmp eax,23; je worker; cmp eax,31; jne move;
+ worker: push dword ptr [esp+44]; push dword ptr [esp+44];
+ mov ecx,0xca5598; call 0x42e260; test eax,eax; jz move;
+ popad;
+ push 0; push dword ptr [esp+20]; push dword ptr [0xb90224];
+ mov eax,dword ptr [esp+24]; shl eax,16;
+ movzx edx,word ptr [esp+20]; or eax,edx; push eax;
+ push dword ptr [esp+20]; push 8; call 0x4357b0;
+ add esp,24; ret;
+ move: popad; jmp 0x4358a0''')
+ hook(0x40e627,5,f'call {rally}; jmp 0x40e62c')
  origin=va+0x2400;idle=origin+4;count=origin+8;busy=origin+12;keys=origin+16
  qcount=origin+20;qread=origin+24;qwrite=origin+28;queue=va+0x4000
  fmt=va+0x2500;txt=va+0x2540;group=va+0x2800
@@ -445,4 +482,4 @@ def install(g):
  hook(0x46c332,5,f'call 0x4315d0; call {draw}; jmp 0x46c337')
  # Battle initialization discards handles from a previous battle without dereferencing them.
  hook(0x46afd0,5,f'mov dword ptr [{qcount}],0; mov dword ptr [{qread}],0; mov dword ptr [{qwrite}],0; mov dword ptr [{count}],0; mov dword ptr [{busy}],0; mov dword ptr [{keys}],0; pushad; cmp dword ptr [0x115e2f8],4; je ready; call 0x41c9a0; push 4; mov ecx,0x115e2f8; call 0x4af6a0; mov ecx,0x115e2f8; call 0x4b0250; call 0x41c670; ready: popad; mov ecx,0xcbce78; jmp 0x46afd5')
- return dict(classify=classify,select=select,keyboard=keyboard,command=command,original_command=original_command,drop=drop,counter=counter,draw=draw,layout=layout,origin=origin,idle=idle,count=count,busy=busy,keys=keys,group=group,text=txt,enqueue=enqueue,original_enqueue=original_enqueue,flush=flush,qcount=qcount,qread=qread,qwrite=qwrite,queue=queue,refresh=refresh)
+ return dict(rally=rally,classify=classify,select=select,keyboard=keyboard,command=command,original_command=original_command,drop=drop,counter=counter,draw=draw,layout=layout,origin=origin,idle=idle,count=count,busy=busy,keys=keys,group=group,text=txt,enqueue=enqueue,original_enqueue=original_enqueue,flush=flush,qcount=qcount,qread=qread,qwrite=qwrite,queue=queue,refresh=refresh)
