@@ -8,6 +8,9 @@ def install(g):
  fmt=va+0x2500;txt=va+0x2540;group=va+0x2800
  label='쉬는 일꾼 : %d'.encode('cp949')+b'\0';b[raw+0x2500:raw+0x2500+len(label)]=label
  # ESI=index, EDI=unit pointer. Result bitmask: idle worker=1, military=2, hero=4.
+ # Types 4/7/20/21/23/31 cover the three factions' workers and ox workers.
+ # Destination +2B4 can be zero at spawn or stale after stopping. Current order,
+ # pending orders and movement state determine idleness, not destination equality.
  classify=emit('''
  xor eax,eax
  cmp esi,1200
@@ -28,6 +31,20 @@ def install(g):
  jz no
  test edx,4
  jnz military
+ movzx edx,byte ptr [edi+0x75]
+ cmp edx,4
+ je worker
+ cmp edx,7
+ je worker
+ cmp edx,20
+ je worker
+ cmp edx,21
+ je worker
+ cmp edx,23
+ je worker
+ cmp edx,31
+ jne no
+ worker:
  cmp word ptr [edi+0x290],1
  jne no
  cmp word ptr [edi+0x388],1
@@ -38,9 +55,6 @@ def install(g):
  jne no
  cmp byte ptr [edi+0x74],0
  jne no
- mov eax,dword ptr [edi+0x2a8]
- cmp eax,dword ptr [edi+0x2b4]
- jne zero
  mov eax,1
  ret
  military:
@@ -49,8 +63,6 @@ def install(g):
  jz no
  or eax,4
  no: ret
- zero: xor eax,eax
- ret
  ''')
  # Drop only overflow highlights; the native clear routine handles its 20 slots.
  drop=emit(f'''

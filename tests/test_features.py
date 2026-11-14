@@ -5,11 +5,13 @@ exec(Path('tests/test_hd.py').read_text().split('# Execute the real terrain blit
 from unicorn import UC_HOOK_CODE
 f=r['Features']
 def word(a,v):u.mem_write(a,struct.pack('<H',v))
-def unit(i,flags=0x3001,owner=0,order=1,pending=1,hp=240,visible=1,queue=0,moving=0):
- a=0x7ca6e8+i*2308;u.mem_write(a,bytes(2308));word(0xa79620+i*2,7)
+def unit(i,flags=0x3001,owner=0,order=1,pending=1,hp=240,visible=1,queue=0,moving=0,typeid=7):
+ a=0x7ca6e8+i*2308;u.mem_write(a,bytes(2308));word(0xa79620+i*2,typeid)
+ u.mem_write(a+0x75,bytes([typeid]))
  u.mem_write(a+0x76,bytes([owner]));put(a+0x9c,hp);put(a+0x1d8,flags)
  u.mem_write(a+0x324,bytes([visible]));word(a+0x290,order);word(a+0x388,pending)
- word(a+0x3a0,queue);u.mem_write(a+0x74,bytes([moving]));put(a+0x2a8,0x100010);put(a+0x2b4,0x100010)
+ # Freshly spawned idle workers have an unset destination, observed in the game.
+ word(a+0x3a0,queue);u.mem_write(a+0x74,bytes([moving]));put(a+0x2a8,0x100010);put(a+0x2b4,0)
  put(a+0x29c,0x10000+i)
  return a
 def classify(i):
@@ -20,6 +22,13 @@ put(0xcbdc3c,0)
 for kwargs,want in [({},1),({'order':2},0),({'order':8},0),({'pending':2},0),({'queue':1},0),({'moving':1},0),({'owner':1},0),({'hp':0},0),({'visible':0},0),({'flags':0x1c8c2},0),({'flags':0x2005},2),({'flags':0x22005},6),({'flags':0x2001},1)]:
  unit(1,**kwargs);assert classify(1)==want,(kwargs,classify(1))
 print('PASS idle/working/moving/queued/dead/enemy/hidden/building/military/hero classification')
+for typeid in [4,7,20,21,23,31]:
+ a=unit(1,typeid=typeid);assert classify(1)==1,typeid
+ put(a+0x2b4,0x230048);assert classify(1)==1,typeid
+ for order in [2,3,8]:
+  unit(1,typeid=typeid,order=order);assert classify(1)==0,(typeid,order)
+unit(1,typeid=5);assert classify(1)==0
+print('PASS all six worker types with unset/stale destinations; active orders excluded')
 # No game UI APIs are needed: these are original selection bookkeeping fixtures.
 u.mem_write(0x425120,b'\xc3')
 u.mem_write(0x467250,b'\xc3')
@@ -33,6 +42,12 @@ def native_select(uc,addr,size,data):
   assert n<20
   put(0xa79580+n*4,0x10000+i);put(0xa7957c,n+1);uc.mem_write(0x7ca6e8+i*2308,b'\x01')
 h=u.hook_add(UC_HOOK_CODE,native_select)
+for i,typeid in enumerate([4,7,20,21,23,31],1):unit(i,typeid=typeid)
+unit(7,typeid=7,order=8);unit(8,typeid=31,owner=1)
+u.reg_write(UC_X86_REG_EAX,1);assert run(f['select'])==4
+assert struct.unpack('<I',u.mem_read(f['count'],4))[0]==6
+assert struct.unpack('<6I',u.mem_read(0xa79580,24))==tuple(0x10000+i for i in range(1,7))
+print('PASS idle selection includes all six worker types and excludes working/enemy workers')
 for i in range(1,46):unit(i,flags=0x2005)
 unit(46,flags=0x22005);unit(47);unit(48,order=8);unit(49,owner=1)
 u.reg_write(UC_X86_REG_EAX,2);assert run(f['select'])==4
