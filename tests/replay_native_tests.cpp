@@ -4,7 +4,14 @@
 #include <iostream>
 // Reserve the game's low address range in this fixed-base test image, before
 // Windows chooses heap/stack addresses. The production adapter uses game data.
-volatile unsigned char fixtureAddressSpace[12*1024*1024];
+volatile unsigned char fixtureAddressSpace[14*1024*1024];
+__declspec(naked) void soundFixture(){__asm {
+ mov eax,42
+ ret
+ }}
+HDC fixtureDC=nullptr;unsigned fixtureReleases=0;
+HRESULT WINAPI fixtureGetDC(void*,HDC* result){*result=fixtureDC;return S_OK;}
+HRESULT WINAPI fixtureReleaseDC(void*,HDC){++fixtureReleases;return S_OK;}
 int main(){
  speed=150;speedKeys=0;setSpeedKeys(2);assert(speed==200);speed=150;setSpeedKeys(2);assert(speed==150);setSpeedKeys(0);setSpeedKeys(4);assert(speed==400);setSpeedKeys(1);assert(speed==150);
  clockFrequency=1000000;tickMilliseconds=50;assert(framePeriod()==33333);
@@ -14,8 +21,32 @@ int main(){
  {ObserverView view;assert(mem<uint8_t>(0xa7d4a6)==0);{ObserverView nested;assert(revealDepth==2);}assert(mem<uint8_t>(0xa7d4a6+8*0x6400-1)==0);assert(nightLight[3]==0&&nightShade[3]==3&&mem<int16_t>(0xb2d85e)==0);}
  assert(nightLight[3]==0&&nightShade[3]==3&&mem<int16_t>(0xb2d85e)==5);
  assert(revealDepth==0&&mem<uint8_t>(0xa7d4a6)==1&&mem<uint8_t>(0xa7d4a6+8*0x6400-1)==1);
+
+ // Enemy units need the cached unit visibility flag as well as terrain fog.
+ uintptr_t enemy=0x7ca6e8+30*2308,embarked=enemy+2308,dead=embarked+2308;
+ for(unsigned id=30;id<=32;++id)mem<uint16_t>(0xa79620+id*2)=4;
+ mem<uint8_t>(enemy+0x76)=1;mem<int32_t>(enemy+0x9c)=100;mem<uint8_t>(enemy+0x324)=1;mem<uint8_t>(enemy+0x1c)=0;mem<uint32_t>(enemy+0x60)=240;mem<uint32_t>(0xa6ea50)=240;
+ mem<int32_t>(embarked+0x9c)=100;mem<uint8_t>(embarked+0x324)=0;mem<uint8_t>(embarked+0x1c)=0;
+ mem<int32_t>(dead+0x9c)=0;mem<uint8_t>(dead+0x324)=1;mem<uint8_t>(dead+0x1c)=0;
+ {ObserverUnits view;assert(mem<uint8_t>(enemy+0x1c)==1&&mem<uint32_t>(enemy+0x60)==239);assert(!mem<uint8_t>(embarked+0x1c)&&!mem<uint8_t>(dead+0x1c));mem<uint32_t>(enemy+0x60)=240;}
+ assert(!mem<uint8_t>(enemy+0x1c)&&mem<uint32_t>(enemy+0x60)==240&&observerDrawn[1]==1);
+ // Exercise the real x86 sound filter: positional combat reaches native queue.
+ soundQueueContinue=(uintptr_t)soundFixture;auto sound=(int(__cdecl*)(int,int,int))observerSoundQueue;
+ assert(sound(20,0,0)==1&&positionalSounds==0);assert(sound(20,12,17)==42&&positionalSounds==1);assert(sound(20,0,17)==42&&positionalSounds==2);
+ for(unsigned id=30;id<=32;++id)mem<uint16_t>(0xa79620+id*2)=0;
  playback=false;{ObserverView view;assert(mem<uint8_t>(0xa7d4a6)==1);}
  memset((void*)0x7a0000,0,0x20000);mem<uint8_t>(0xb137bc)=1;mem<int32_t>(0xb137bc+0x14)=12345;mem<int32_t>(0xb137bc+0x18)=67890;mem<int32_t>(0xb137bc+0x1c)=4;mem<int16_t>(0xb137bc+0x1b5c)=20;mem<int16_t>(0xb137bc+0x1b62)=1600;
+ // A composed panel commits a complete stable image in a single surface DC.
+ mem<int32_t>(0x115e308)=1280;mem<int32_t>(0x46bdca)=1280;
+ BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=1280;bi.bmiHeader.biHeight=-200;bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;
+ void* image=nullptr;fixtureDC=CreateCompatibleDC(nullptr);HBITMAP bm=CreateDIBSection(fixtureDC,&bi,DIB_RGB_COLORS,&image,nullptr,0);assert(bm);auto old=SelectObject(fixtureDC,bm);memset(image,0x40,1280*200*4);
+ void* vtable[27]{};vtable[17]=(void*)fixtureGetDC;vtable[26]=(void*)fixtureReleaseDC;void** object=vtable;mem<void*>(0x65181c)=&object;
+ playback=true;active=true;failed=false;drawResources();assert(fixtureReleases==1&&resourceCommits==1);
+ std::vector<uint8_t> firstImage((uint8_t*)image,(uint8_t*)image+1280*200*4);
+ bool hasText=false;for(int y=34;y<66;++y)for(int x=850;x<1280;++x)if(mem<uint32_t>((uintptr_t)image+(y*1280+x)*4)!=0x40404040)hasText=true;assert(hasText);
+ drawResources();assert(fixtureReleases==2&&resourceCommits==2&&!memcmp(firstImage.data(),image,firstImage.size()));
+ assert(mem<uint32_t>((uintptr_t)image)==0x40404040); // unrelated terrain preserved
+ SelectObject(fixtureDC,old);DeleteObject(bm);DeleteDC(fixtureDC);mem<void*>(0x65181c)=nullptr;
  auto rows=playerResources();assert(rows.size()==1&&rows[0].rice==12345&&rows[0].wood==67890&&rows[0].population==24&&rows[0].limit==1600);
  memset((void*)0xb10000,0,0x30000);active=false;
  memset((void*)0xb10000,0,0x20000);
@@ -54,5 +85,5 @@ int main(){
  // Strict bounded parsing accepts no truncated record, even with an oversized request.
  failed=false;input={1,2,3,4};cursor=0;uint32_t n=0;assert(read(&n,4));assert(n==0x04030201);
  assert(!read(&n,4)&&failed);
- std::cout<<"PASS: observer visibility restoration, resource rows, x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
+ std::cout<<"PASS: enemy/dead/embarked visibility restoration, positional combat audio, resource rows, x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
 }

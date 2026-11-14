@@ -30,3 +30,13 @@ The launcher embeds the x86 DLL and extracts it to a content-addressed cache, th
 4. C++ x86 fixture tests execute the actual capture/injection/checksum/parser functions: eight slots, 50-packet boundary, invalid slot/overflow rejection, generation handle retention, truncated input rejection. C# archive tests cover all eight slots, round trip, exact extraction, missing seal, invalid player/selection count, modified payload, extra bytes and oversized metadata.
 
 Not verified: two separate PCs connected in a real network match, disconnect/rejoin, long-running multiplayer, or every campaign script. Multiplayer support is an experimental implementation; the eight-slot integration test is not a claim of two-PC network verification. No broad game balance or existing resolution patches are changed.
+
+## Observer correction 0.6.6
+
+Terrain visibility alone does not expose cached hidden units. `4069B0` checks unit `+1C` before drawing, then suppresses repeated draws using `+60`. Around `46BE00`, active registry entries with positive HP and in-world byte `+324 == 1` temporarily receive visible=1 and previous-tick draw stamp; both fields are restored before simulation resumes. This includes enemy units without exposing embarked/dead units.
+
+`433560` is the shared positional sound queue, not just UI notifications. Its previous unconditional return muted combat effects. A native entry filter now suppresses only events with both map coordinates zero and forwards positional effects to the unmodified queue. Portrait renderers remain suppressed.
+
+Resource text is composed in a top-down 32-bit DIB and committed with one BitBlt/ReleaseDC, after background/unit/selection stages and before final presentation. Non-antialiased Korean font avoids repeated blended glyph accumulation and 8-bit palette dithering. Tests verify complete/stable repeated panel commits and preservation of unrelated terrain pixels.
+
+Actual 6,880-frame, tick 6,507 recording replayed to COMPLETE with state agreement: diagnostic counters recorded P1 13,595 and P2 48,553 successful unit draws, 4,785 positional sound queue forwards. Sound routing was verified in the executable; physical speaker output was not independently measured. The deterministic snapshot remains a diagnostic subset, not exhaustive memory equality. An optional session `diagnostics.enabled` file enables per-second `observer-diagnostics.txt` counts.

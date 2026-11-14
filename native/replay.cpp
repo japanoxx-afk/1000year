@@ -87,6 +87,36 @@ struct ObserverView {
  }}
  ~ObserverView(){if(enabled&&--revealDepth==0){memcpy((void*)0xa7d4a6,savedVisibility,sizeof(savedVisibility));mem<int16_t>(0xb2d85e)=savedDayPhase;}}
 };
+// Per-unit visibility is cached separately from terrain fog. Limit the override
+// to rendering so combat, AI and the recorded player vision remain unchanged.
+uint32_t observerDrawn[8]{},positionalSounds=0,resourceCommits=0;
+struct ObserverUnits {
+ struct Saved {uintptr_t unit;uint8_t visible;uint32_t drawn;};
+ std::vector<Saved> saved;
+ ObserverUnits(){if(!playback||(!active&&!completed)||failed)return;
+  for(unsigned id=1;id<1200;++id){uintptr_t u=0x7ca6e8+id*2308;
+   if(!mem<uint16_t>(0xa79620+id*2)||mem<int32_t>(u+0x9c)<=0||mem<uint8_t>(u+0x324)!=1)continue;
+   saved.push_back({u,mem<uint8_t>(u+0x1c),mem<uint32_t>(u+0x60)});
+   mem<uint8_t>(u+0x1c)=1;mem<uint32_t>(u+0x60)=mem<uint32_t>(0xa6ea50)-1;
+  }
+ }
+ ~ObserverUnits(){for(const auto& v:saved){if(mem<uint32_t>(v.unit+0x60)==mem<uint32_t>(0xa6ea50)&&mem<uint8_t>(v.unit+0x76)<8)++observerDrawn[mem<uint8_t>(v.unit+0x76)];mem<uint8_t>(v.unit+0x1c)=v.visible;mem<uint32_t>(v.unit+0x60)=v.drawn;}}
+};
+// The original queue carries positional combat effects as well as UI alerts.
+// Keep positional sounds; only suppress non-positional observer notifications.
+uintptr_t soundQueueContinue=0x433567;
+__declspec(naked) void observerSoundQueue(){__asm {
+ cmp word ptr [esp+8],0
+ jne original
+ cmp word ptr [esp+12],0
+ jne original
+ mov eax,1
+ ret
+ original:
+ inc dword ptr [positionalSounds]
+ mov dx,word ptr ds:[0x6672a6]
+ jmp [soundQueueContinue]
+}}
 struct PlayerResources {unsigned slot;int rice,wood,population,limit;wchar_t name[32];};
 std::vector<PlayerResources> playerResources(){
  std::vector<PlayerResources> rows;
@@ -102,9 +132,20 @@ void drawResources(){
  auto table=*(void***)surface;HDC dc=nullptr;
  auto getDC=(HRESULT(WINAPI*)(void*,HDC*))table[17];auto releaseDC=(HRESULT(WINAPI*)(void*,HDC))table[26];
  if(FAILED(getDC(surface,&dc))||!dc)return;
- int saved=SaveDC(dc);SelectClipRgn(dc,nullptr);SetMapMode(dc,MM_TEXT);SetViewportOrgEx(dc,0,0,nullptr);SetWindowOrgEx(dc,0,0,nullptr);SetBkMode(dc,TRANSPARENT);
- HFONT font=mem<HFONT>(0xcecc30);if(font)SelectObject(dc,font);
- int width=mem<int32_t>(0x115e308),left=width-430;if(left<4)left=4;
+ // Compose offscreen and commit once. The DirectDraw wrapper may display
+ // intermediate surface changes between the game's four render stages.
+ HDC destination=dc;int width=mem<int32_t>(0x115e308);
+ if(width<1||width>8192){releaseDC(surface,dc);return;}
+ HDC composed=CreateCompatibleDC(destination);
+ BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=width;info.bmiHeader.biHeight=-180;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
+ void* pixels=nullptr;HBITMAP bitmap=CreateDIBSection(destination,&info,DIB_RGB_COLORS,&pixels,nullptr,0);
+ if(!composed||!bitmap){if(composed)DeleteDC(composed);if(bitmap)DeleteObject(bitmap);releaseDC(surface,dc);return;}
+ HGDIOBJ previous=SelectObject(composed,bitmap);BitBlt(composed,0,0,width,180,destination,0,0,SRCCOPY);dc=composed;
+ int saved=SaveDC(dc);SetBkMode(dc,TRANSPARENT);
+ HFONT font=mem<HFONT>(0xcecc30);static HFONT observerFont=nullptr;
+ if(!observerFont){LOGFONTW lf{};if(!font||GetObjectW(font,sizeof(lf),&lf)!=sizeof(lf)){lf.lfHeight=-14;lf.lfCharSet=HANGEUL_CHARSET;wcscpy_s(lf.lfFaceName,L"굴림");}lf.lfQuality=NONANTIALIASED_QUALITY;observerFont=CreateFontIndirectW(&lf);}
+ if(observerFont)SelectObject(dc,observerFont);
+ int left=width-430;if(left<4)left=4;
  // Legacy replays reserve 128 columns which the background never repaints.
  // Clear only that non-terrain strip before drawing changing-width numbers.
  int terrainWidth=mem<int32_t>(0x46bdca);if(terrainWidth>0&&terrainWidth<width){RECT unused{terrainWidth,32,width,180};FillRect(dc,&unused,(HBRUSH)GetStockObject(BLACK_BRUSH));}
@@ -115,12 +156,18 @@ void drawResources(){
   swprintf_s(value,L"%d",r.rice);text(left+150,y,value);swprintf_s(value,L"%d",r.wood);text(left+235,y,value);
   swprintf_s(value,L"%d/%d",r.population,r.limit);text(left+320,y,value);y+=16;
  }
- if(saved)RestoreDC(dc,saved);releaseDC(surface,dc);
+ if(saved)RestoreDC(dc,saved);
+ BitBlt(destination,0,32,width,148,dc,0,32,SRCCOPY);GdiFlush();
+ SelectObject(composed,previous);DeleteObject(bitmap);DeleteDC(composed);releaseDC(surface,destination);++resourceCommits;
+ static DWORD lastDiagnostic=0;DWORD now=GetTickCount();
+ if(now-lastDiagnostic>=1000&&GetFileAttributesW((root+L"\\diagnostics.enabled").c_str())!=INVALID_FILE_ATTRIBUTES){lastDiagnostic=now;
+  FILE* f=_wfopen((root+L"\\observer-diagnostics.txt").c_str(),L"wb");if(f){fprintf(f,"resourceCommits=%u positionalSounds=%u\n",resourceCommits,positionalSounds);for(unsigned i=0;i<8;++i)fprintf(f,"P%u draws=%u\n",i+1,observerDrawn[i]);fclose(f);}
+ }
 }
 uint32_t __fastcall observerFog(void* self,void*){ObserverView view;return ((uint32_t(__thiscall*)(void*))0x47fa10)(self);}
-uint32_t __cdecl observerBackground(){ObserverView view;return ((uint32_t(__cdecl*)())0x46bda0)();}
-uint32_t __cdecl observerUnits(){ObserverView view;return ((uint32_t(__cdecl*)())0x46be00)();}
-uint32_t __cdecl observerSelection(){ObserverView view;return ((uint32_t(__cdecl*)())0x46bea0)();}
+uint32_t __cdecl observerBackground(){ObserverView view;auto result=((uint32_t(__cdecl*)())0x46bda0)();drawResources();return result;}
+uint32_t __cdecl observerUnits(){ObserverView view;ObserverUnits units;auto result=((uint32_t(__cdecl*)())0x46be00)();drawResources();return result;}
+uint32_t __cdecl observerSelection(){ObserverView view;auto result=((uint32_t(__cdecl*)())0x46bea0)();drawResources();return result;}
 uint32_t __cdecl observerHud(){ObserverView view;drawResources();return ((uint32_t(__cdecl*)())0x46c380)();}
 bool write(const void* p,size_t n){if(failed)return false;if(!output||ftell(output)<0||ftell(output)+n>128u*1024*1024||fwrite(p,1,n,output)!=n){fail("ERROR: replay write failed or size limit reached");return false;}return true;}
 bool read(void* p,size_t n){if(cursor>input.size()||n>input.size()-cursor){fail("ERROR: truncated replay");return false;}memcpy(p,input.data()+cursor,n);cursor+=n;return true;}
@@ -424,8 +471,8 @@ bool install(){
  if(playback&&!patch(0x435040,"\xb8\x01\x00\x00\x00\xc3",6))return false;
  if(playback){
   if(memcmp((void*)0x433560,"\x66\x8b\x15\xa6\x72\x66\x00",7)||memcmp((void*)0x41fb50,"\x81\xec\xb0\x00\x00\x00",6)||memcmp((void*)0x431330,"\x81\xec\x88\x00\x00\x00",6))return false;
-  // UI notification enqueue and portrait renderer; combat audio is retained.
-  if(!patch(0x433560,"\xb8\x01\x00\x00\x00\xc3\x90",7)||!patch(0x41fb50,"\xb8\x01\x00\x00\x00\xc3",6)||!patch(0x431330,"\xb8\x01\x00\x00\x00\xc3",6))return false;
+  // Filter the shared sound queue instead of disabling every effect sound.
+  if(!jump(0x433560,(void*)observerSoundQueue,7)||!patch(0x41fb50,"\xb8\x01\x00\x00\x00\xc3",6)||!patch(0x431330,"\xb8\x01\x00\x00\x00\xc3",6))return false;
  }
  if(playback){
   for(auto site: {std::pair<uintptr_t,uintptr_t>{0x46c68d,(uintptr_t)observerFog},{0x471f02,(uintptr_t)observerBackground},{0x471f62,(uintptr_t)observerUnits},{0x471f85,(uintptr_t)observerSelection},{0x471fa8,(uintptr_t)observerHud}}){
