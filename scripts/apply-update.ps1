@@ -1,5 +1,11 @@
 param([int]$LauncherPid, [string]$Package, [string]$Target, [switch]$NoRestart, [string]$CurrentEntrypoint = '', [string]$ReadyFile = '')
 $ErrorActionPreference = 'Stop'
+function Get-PackageHash([string]$Path) {
+    $stream=[IO.File]::OpenRead($Path)
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','') }
+    finally { $sha.Dispose(); $stream.Dispose() }
+}
 $resultLog = Join-Path ([IO.Path]::GetDirectoryName($Package)) 'update-result.log'
 try {
 if ($CurrentEntrypoint -and $CurrentEntrypoint -ne 'MythLauncher.exe' -and $CurrentEntrypoint -notmatch '^MythLauncher-\d+\.\d+\.\d+(-preview)?\.exe$') { throw 'Invalid current entrypoint' }
@@ -18,10 +24,10 @@ if ($manifest.Entrypoint -notmatch '^MythLauncher-\d+\.\d+\.\d+(-preview)?\.exe$
 $allowed = @('MythLauncher.exe',$manifest.Entrypoint,'PATCHNOTES.md','apply-update.ps1','compat\ddraw.dll','compat\LICENSE.cnc-ddraw','compat\portable.json','package.json')
 foreach ($file in $manifest.Files) {
     if ($file.Path -notin $allowed -or $file.Path -eq 'package.json') { throw 'Unexpected update file' }
-    if ((Get-FileHash -LiteralPath (Join-Path $stage $file.Path)).Hash -ne $file.SHA256) { throw "Update file hash mismatch: $($file.Path)" }
+    if ((Get-PackageHash (Join-Path $stage $file.Path)) -ne $file.SHA256) { throw "Update file hash mismatch: $($file.Path)" }
 }
 if (@($manifest.Files).Count -ne 7 -or @($manifest.Files.Path | Select-Object -Unique).Count -ne 7) { throw 'Incomplete update manifest' }
-if ((Get-FileHash -LiteralPath (Join-Path $stage 'MythLauncher.exe')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $stage $manifest.Entrypoint)).Hash) { throw 'Launcher alias mismatch' }
+if ((Get-PackageHash (Join-Path $stage 'MythLauncher.exe')) -ne (Get-PackageHash (Join-Path $stage $manifest.Entrypoint))) { throw 'Launcher alias mismatch' }
 # Signal readiness only after every archive/file hash has passed validation.
 if ($ReadyFile) {
     [IO.File]::WriteAllText($ReadyFile,'ready')

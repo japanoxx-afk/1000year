@@ -81,7 +81,13 @@ namespace Myth {
             string helper=Path.Combine(session,"apply-update.ps1"),ready=Path.Combine(session,"installer-ready.txt");
             using(var resource=typeof(Updates).Assembly.GetManifestResourceStream("Myth.UpdateInstaller"))using(var output=File.Create(helper))resource.CopyTo(output);
             string args="-NoProfile -ExecutionPolicy Bypass -File \""+helper+"\" -LauncherPid "+pid+" -Package \""+package+"\" -Target \""+Path.Combine(Path.GetFullPath(target),".")+"\" -CurrentEntrypoint \""+entrypoint+"\" -ReadyFile \""+ready+"\"";
-            using(var installer=Process.Start(new ProcessStartInfo("powershell.exe",args){UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden})) {
+            string windows=Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            string shell=Path.Combine(windows,Environment.Is64BitOperatingSystem&&!Environment.Is64BitProcess?"Sysnative":"System32","WindowsPowerShell","v1.0","powershell.exe");
+            var start=new ProcessStartInfo(shell,args){UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden};
+            // A launcher started from PowerShell 7 can inherit an incompatible module path.
+            // Let Windows PowerShell construct its own default module search path.
+            start.EnvironmentVariables.Remove("PSModulePath");
+            using(var installer=Process.Start(start)) {
                 // Do not exit the launcher until extraction and verification succeeded.
                 var clock=Stopwatch.StartNew();
                 while(clock.ElapsedMilliseconds<60000) {
