@@ -6,7 +6,7 @@ from unicorn import Uc,UC_ARCH_X86,UC_MODE_32
 from unicorn.x86_const import *
 name=sys.argv[3] if len(sys.argv)>3 else 'hd'
 W,H=(1280,720) if name=='wide' else (1024,768)
-VW=W-128;DX=W-640;DY=H-480
+VW=W-128;DX=W-640;DY=(H-480)//2;UP=H-480-DY
 r=json.loads(pathlib.Path('compat/'+name+'.json').read_text())
 s=pathlib.Path(sys.argv[1]).read_bytes();assert hashlib.sha256(s).hexdigest()==r['SourceSHA256']
 b=bytearray(s)
@@ -46,21 +46,23 @@ print('PASS mini-map shared position reset is idempotent')
 # Test the background translation trampoline restores the original return path.
 put(0xcecc60,480);assert run(0x468140,(900,700),stop=0x468146)==0
 assert struct.unpack('<I',u.mem_read(0x208004,4))[0]==900-DX
+assert struct.unpack('<I',u.mem_read(0x208008,4))[0]==700+UP
 print('PASS HUD transparency hit test maps display coordinates to source coordinates')
 
-# Resource icons and all digits share an origin measured from the complete string.
-u.mem_write(0x469c10,bytes.fromhex('8b44240483f8217506b808000000c3b814000000c3'))
-u.ctl_remove_cache(0x469c10,0x469c30)
-player=0x600000
-for rice,wood,pop,limit in [(600,500,20,1600),(0,0,0,0),(123456,98765,1500,1600)]:
- put(player+0x14,rice,wood,pop)
- u.mem_write(player+0x1b5c,struct.pack('<h',0));u.mem_write(player+0x1b62,struct.pack('<h',limit))
- u.reg_write(UC_X86_REG_EBP,player)
- assert run(0x48b87c,stop=0x48b882)==-4
- origin=struct.unpack('<I',u.mem_read(base+sec.VirtualAddress+0x2400,4))[0]
- width=3*20+20+8*(sum(len(str(v)) for v in [rice,wood,pop,limit])+1)
- assert origin==(W-width)//2,(rice,wood,pop,limit,origin,width)
-print('PASS resource icons and numeric text centered for varying digit counts:',name)
+# The complete resource renderer is byte-for-byte identical to the original.
+assert p.get_data(0x48b870-base,0x269)==pefile.PE(data=s).get_data(0x48b870-base,0x269)
+print('PASS original resource icon and numeric layout restored')
+
+# Exercise the real minimap projection using its new shared screen origin.
+mx,my=467+DX,385+DY
+u.mem_write(0x7a2ce8+0xfc3c+2*(40*160+80),bytes([37,61]))
+assert run(0x49d900,(mx+80,my+40,0x601000,0x601004),0x7a2ce8)==20
+assert u.reg_read(UC_X86_REG_EAX)==1
+assert struct.unpack('<H',u.mem_read(0x601000,2))[0]==37
+assert struct.unpack('<H',u.mem_read(0x601004,2))[0]==61
+assert run(0x49d900,(mx+80,my+40+UP,0x601000,0x601004),0x7a2ce8)==20
+assert u.reg_read(UC_X86_REG_EAX)==0
+print('PASS relocated minimap click projects correctly; former location is rejected')
 
 # Stub GDI measurement and capture TextOut arguments while executing the hint hook.
 from unicorn import UC_HOOK_CODE

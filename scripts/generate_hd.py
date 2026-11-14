@@ -11,7 +11,8 @@ parser.add_argument('--wide',action='store_true',help='1280x720 internal 16:9 mo
 args=parser.parse_args()
 W,H=(1280,720) if args.wide else (1024,768)
 VW=W-128
-DX,DY=W-640,H-480
+DX,DY=W-640,(H-480)//2
+UP=H-480-DY
 source=pathlib.Path(args.source).read_bytes()
 assert hashlib.sha256(source).hexdigest()=='1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf', 'Unsupported executable'
 p=pefile.PE(data=source);b=bytearray(source);edits=[]
@@ -70,23 +71,23 @@ def hook(addr,length,code):
  target=va+cursor;blob=asm(target,code);b[raw+cursor:raw+cursor+len(blob)]=blob;cursor=(cursor+len(blob)+15)&~15
  patch(addr,asm(addr,'jmp '+hex(target))+b'\x90'*(length-5),'HD trampoline')
 cursor=0
-# Background remains a 640x480 resource. Blit into lower-right, preserving source pitch.
+# Background remains a 640x480 resource. Blit centered vertically at the right edge, preserving source pitch.
 hook(0x46c503,5,'mov eax,640; jmp 0x46c508')
-hook(0x46c546,6,f'push {DX}; push edx; call dword ptr [edi+0x1c]; jmp 0x46c54c')
+hook(0x46c546,6,f'mov dword ptr [esp],{DY}; push {DX}; push edx; call dword ptr [edi+0x1c]; jmp 0x46c54c')
 d(0x49de72,467+DX,'minimap shared x')
 d(0x49de79,385+DY,'minimap shared y')
 # Mini-map is drawn into the original-coordinate background surface before that surface is translated.
-hook(0x46c247,5,f'sub dword ptr [0x7a2ce8],{DX}; call 0x46c460; add dword ptr [0x7a2ce8],{DX}; jmp 0x46c24c')
-# Transparent HUD-background pixel hit testing maps display x back to source x.
-hook(0x468140,6,f'sub dword ptr [esp+4],{DX}; mov edx,dword ptr [0xcecc60]; jmp 0x468146')
+hook(0x46c247,5,f'sub dword ptr [0x7a2ce8],{DX}; add dword ptr [0x7a2cec],{UP}; call 0x46c460; sub dword ptr [0x7a2cec],{UP}; add dword ptr [0x7a2ce8],{DX}; jmp 0x46c24c')
+# Transparent HUD-background pixel hit testing maps both display axes back to the original surface.
+hook(0x468140,6,f'sub dword ptr [esp+4],{DX}; add dword ptr [esp+8],{UP}; mov edx,dword ptr [0xcecc60]; jmp 0x468146')
 # Retain original menu resolution. Battle initialization switches the renderer and surfaces.
 d(0x4dec88,2,'native menu mode')
 for a,x in [(0x4aedd3,640),(0x4aedd8,480),(0x47158c,480),(0x471591,640)]:d(a,x,'native menu dimensions')
 hook(0x46afd0,5,'pushad; cmp dword ptr [0x115e2f8],4; je ready; call 0x41c9a0; push 4; mov ecx,0x115e2f8; call 0x4af6a0; mov ecx,0x115e2f8; call 0x4b0250; call 0x41c670; ready: popad; mov ecx,0xcbce78; jmp 0x46afd5')
 d(0x447a4f,373+DY,'day-night dial y')
 d(0x447a54,593+DX,'day-night dial x')
-d(0x48b862,468+DY,'bottom resource bar y')
-d(0x43168e,445+DY,'bottom tooltip text y')
+d(0x48b862,H-12,'bottom resource bar y')
+d(0x43168e,H-35,'bottom tooltip text y')
 # Mini-map camera footprint scales with the world viewport, keeping map projection unchanged.
 hook(0x49d702,7,f'imul eax,eax,{VW}; xor edx,edx; mov ecx,512; div ecx; mov word ptr [esi+0x2284c],ax; jmp 0x49d709')
 hook(0x49d72c,7,f'imul eax,eax,{H}; xor edx,edx; mov ecx,480; div ecx; mov word ptr [esi+0x2284e],ax; jmp 0x49d733')
@@ -101,61 +102,8 @@ for i in md.disasm(p.get_data(0x47fa10-0x400000,0x47fe3e-0x47fa10),0x47fa10):
 # The original cleanup intentionally retains the resource-bar surface. Reuse it
 # on a mode change rather than overwriting its pointer with an empty surface.
 hook(0x41c88d,6,'cmp dword ptr [0x651510],0; jne 0x41c8c2; push 0; push 1; push 12; jmp 0x41c893')
-# Center the resource strip from actual icon widths and all four numeric values.
-# Both the first icon and subsequent digit layout read the same per-frame origin.
+# Resource icons and numeric text retain their original x=230 layout.
 origin=va+0x2400
-helper=va+cursor
-code=asm(helper,f"""
-pushad
-mov eax,dword ptr [ebp+0x14]
-call digits
-mov ebx,ecx
-mov eax,dword ptr [ebp+0x18]
-call digits
-add ebx,ecx
-movsx eax,word ptr [ebp+0x1b5c]
-add eax,dword ptr [ebp+0x1c]
-call digits
-add ebx,ecx
-movsx eax,word ptr [ebp+0x1b62]
-call digits
-add ebx,ecx
-inc ebx
-push 0x21
-call 0x469c10
-add esp,4
-imul ebx,eax
-push 0x23
-call 0x469c10
-add esp,4
-imul eax,eax,3
-add ebx,eax
-add ebx,20
-mov eax,{W}
-sub eax,ebx
-sar eax,1
-mov dword ptr [{origin}],eax
-popad
-ret
-digits:
-xor ecx,ecx
-mov esi,10
-test eax,eax
-jns count
-neg eax
-inc ecx
-count:
-inc ecx
-xor edx,edx
-div esi
-test eax,eax
-jne count
-ret
-""")
-b[raw+cursor:raw+cursor+len(code)]=code;cursor=(cursor+len(code)+15)&~15
-hook(0x48b87c,6,f'call {helper}; push 0x21; mov dword ptr [esp+0x18],ebp; jmp 0x48b882')
-hook(0x48b896,5,f'push dword ptr [{origin}]; jmp 0x48b89b')
-hook(0x48b8b9,6,f'add esi,dword ptr [{origin}]; jmp 0x48b8bf')
 # Center the associated bottom hint using the selected font's actual text extent.
 hook(0x431687,20,f"""
 pushad

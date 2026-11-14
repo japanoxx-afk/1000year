@@ -60,3 +60,14 @@ python tests/test_native.py
 python scripts/generate_hd.py --wide --source PATH/TO/MMyth.exe --output compat/wide.json
 python tests/test_hd.py PATH/TO/MMyth.exe MODULE_DIR wide
 ```
+
+
+## 0.3.1 · 오른쪽 HUD 세로 중앙 배치
+
+HUD의 480px 높이 배경을 y=(H-480)/2에 배치한다. 720p에서는 y=120으로 이전 y=240보다 120px 위에 위치한다. 공통 버튼/목록/초상화 좌표와 낮밤 표시, 미니맵 원점을 같은 DY로 변경한다. 화면 하단 자원 막대와 설명 텍스트는 화면 하단 기준을 유지한다.
+
+- 0046C546: 배경 BltFast의 y 인자를 새 DY로 설정한다.
+- 0046C247: 미니맵을 배경 표면에 그릴 때만 x를 DX만큼 빼고 y를 UP만큼 더한다. 기존 그리기의 H-480 역변환을 상쇄한 뒤 공유 원점을 복구한다.
+- 00468140: 배경 투명 픽셀 hit test의 x와 y를 모두 역변환한다.
+- 0049D900: 변경된 공유 원점을 사용하는 실제 미니맵 클릭 함수를 실행하여 지도 좌표 변환과 이전 위치 거부를 검사한다.
+- 0048B870~0048BAD8: 자원 렌더러 전체를 원본 바이트로 복원한다.
