@@ -10,6 +10,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <dshow.h>
 
 namespace {
 template<class T> T& mem(uintptr_t p) {return *reinterpret_cast<T*>(p);}
@@ -21,6 +22,7 @@ static_assert(sizeof(Frame)==40,"wire format");
 std::wstring root;
 bool playback=false,active=false,failed=false,privateSave=false,inside=false;
 bool completed=false,hudOnly=false;
+#include "battle_music.h"
 bool dispatchEntered=false;
 FILE* output=nullptr;
 std::vector<Command> commands;
@@ -283,7 +285,7 @@ void dumpObserverFrame(){
  wchar_t name[64];swprintf_s(name,L"\\observer-frame-%u.bmp",rendered);FILE* f=_wfopen((root+name).c_str(),L"wb");if(f){BITMAPFILEHEADER header{};header.bfType=0x4d42;header.bfOffBits=14+40+1024;header.bfSize=header.bfOffBits+width*height;BITMAPINFOHEADER info{};info.biSize=40;info.biWidth=width;info.biHeight=-height;info.biPlanes=1;info.biBitCount=8;info.biSizeImage=width*height;fwrite(&header,14,1,f);fwrite(&info,40,1,f);fwrite(colors,1024,1,f);for(int row=0;row<height;++row)fwrite(pixels+row*pitch,width,1,f);fclose(f);}unlockSurface(surface);
 }
 #endif
-uint32_t __cdecl observerHud(){ObserverView view;drawResources();drawTimer();
+uint32_t __cdecl observerHud(){serviceBattleMusic();ObserverView view;drawResources();drawTimer();
 #if defined(MYTH_OBSERVER_CAMERA_TEST) || defined(MYTH_HUD_TEST)
  dumpObserverFrame();
 #endif
@@ -291,6 +293,7 @@ auto result=((uint32_t(__cdecl*)())0x46c380)();restoreTimer();restoreResources()
 bool write(const void* p,size_t n){if(failed)return false;if(!output||ftell(output)<0||ftell(output)+n>128u*1024*1024||fwrite(p,1,n,output)!=n){fail("ERROR: replay write failed or size limit reached");return false;}return true;}
 bool read(void* p,size_t n){if(cursor>input.size()||n>input.size()-cursor){fail("ERROR: truncated replay");return false;}memcpy(p,input.data()+cursor,n);cursor+=n;return true;}
 void finish(){
+ if(playback&&musicAvailable)requestMusic(0);
  if(output){uint32_t end=0xffffffff;write(&end,4);fflush(output);fclose(output);output=nullptr;}
  active=false;
  completed=true;
@@ -567,6 +570,17 @@ bool install(){
  // directory is required; never silently replace an unrepresentable path.
  BOOL replaced=FALSE;
  if(!WideCharToMultiByte(CP_ACP,WC_NO_BEST_FIT_CHARS,(root+L"\\initial.dat").c_str(),-1,checkpoint,MAX_PATH,nullptr,&replaced)||replaced||strlen(checkpoint)>=120)return false;
+ wchar_t gamePath[32768];DWORD gameLength=GetModuleFileNameW(nullptr,gamePath,32768);
+ if(gameLength&&gameLength<32768){battleMusicPath=gamePath;size_t slash=battleMusicPath.find_last_of(L"\\/");
+  if(slash!=std::wstring::npos){battleMusicPath.resize(slash);battleMusicPath+=L"\\BGM\\Track02.mp3";
+   musicAvailable=GetFileAttributesW(battleMusicPath.c_str())!=INVALID_FILE_ATTRIBUTES;
+  }
+ }
+ if(musicAvailable){
+  // Validate every CD entry before installing any replacement.
+  if(memcmp((void*)0x45bbb0,"\xa1\xa0\x54\x6c\x00",5)||memcmp((void*)0x45bc80,"\xa1\xa0\x54\x6c\x00",5)||memcmp((void*)0x45bcd0,"\x51\xa1\xa0\x54\x6c\x00",6)||memcmp((void*)0x45bdb0,"\x83\xec\x10\x8b\x15",5))return false;
+  if(!jump(0x45bbb0,(void*)fileMusicPlay,5)||!jump(0x45bc80,(void*)fileMusicStop,5)||!jump(0x45bcd0,(void*)fileMusicPause,6)||!jump(0x45bdb0,(void*)fileMusicTrack,9))return false;
+ }
  if(hudOnly){
   if(mem<uint8_t>(0x471fa8)!=0xe8||0x471fad+mem<int32_t>(0x471fa9)!=0x46c380)return false;
   uint8_t call[5]={0xe8};mem<int32_t>((uintptr_t)call+1)=(int32_t)((uintptr_t)observerHud-0x471fad);if(!patch(0x471fa8,call,5))return false;

@@ -13,6 +13,12 @@ std::vector<uint8_t> fixturePixels(1344*720);unsigned fixtureLocks=0,fixtureUnlo
 HRESULT WINAPI fixtureLock(void*,RECT*,void* result,DWORD,HANDLE){++fixtureLocks;mem<int32_t>((uintptr_t)result+16)=1344;mem<uint8_t*>((uintptr_t)result+36)=fixturePixels.data();return S_OK;}
 HRESULT WINAPI fixtureUnlock(void*,RECT*){++fixtureUnlocks;return S_OK;}
 int main(){
+ // Music OFF and replay completion must never start a decoder thread.
+ musicAvailable=true;mem<uint16_t>(0x4dec90)=3;mem<int32_t>(0x7c9cd0)=0;
+ serviceBattleMusic();assert(musicThreadStarted==0&&musicRequest==0);
+ playback=true;completed=true;mem<int32_t>(0x7c9cd0)=1;
+ serviceBattleMusic();assert(musicThreadStarted==0&&musicRequest==0);
+ completed=false;musicAvailable=false;playback=false;
  speed=150;speedKeys=0;setSpeedKeys(2);assert(speed==200);speed=150;setSpeedKeys(2);assert(speed==150);setSpeedKeys(0);setSpeedKeys(4);assert(speed==400);setSpeedKeys(1);assert(speed==150);
  clockFrequency=1000000;tickMilliseconds=50;assert(framePeriod()==33333);
  fixtureAddressSpace[0]=0;
