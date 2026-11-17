@@ -12,5 +12,7 @@ if /I "%~1"=="observer-test" set "extra=/DMYTH_OBSERVER_CAMERA_TEST"
 if /I "%~1"=="observer-test" set "output=MythReplayObserverTest"
 if /I "%~1"=="hud-test" set "extra=/DMYTH_HUD_TEST"
 if /I "%~1"=="hud-test" set "output=MythHudTest"
+if /I "%~1"=="sync-test" set "extra=/DMYTH_SYNC_TEST"
+if /I "%~1"=="sync-test" set "output=MythSyncTest"
 cl /nologo /utf-8 /std:c++17 /EHsc /W4 /O2 /MT /LD %extra% native\replay.cpp /Fo:dist\native\%output%.obj /Fe:dist\native\%output%.dll /link user32.lib gdi32.lib ole32.lib strmiids.lib
 exit /b %errorlevel%

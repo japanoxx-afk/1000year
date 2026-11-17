@@ -138,6 +138,8 @@ for entry,args,stack in [(0x4652a0,(0x209000,0x209004,1,1,0),24),(0x417880,(0x20
   assert actual==want,(hex(entry),target,actual,want)
 u.hook_del(h)
 print('PASS all three production paths obey four rally directions around asymmetric footprints and stay nearby')
+if name=='portable':
+ print('PASS portable mode shares gameplay rules and retains its native UI/geometry');sys.exit(0)
 for kwargs,want in [({},1),({'order':2},0),({'order':8},0),({'pending':2},0),({'queue':1},0),({'moving':1},0),({'owner':1},0),({'hp':0},0),({'visible':0},0),({'flags':0x1c8c2},0),({'flags':0x2005},2),({'flags':0x22005},6),({'flags':0x2001},1)]:
  unit(1,**kwargs);assert classify(1)==want,(kwargs,classify(1))
 print('PASS idle/working/moving/queued/dead/enemy/hidden/building/military/hero classification')

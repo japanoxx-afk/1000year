@@ -5,7 +5,7 @@ import pefile
 from unicorn import Uc,UC_ARCH_X86,UC_MODE_32
 from unicorn.x86_const import *
 name=sys.argv[3] if len(sys.argv)>3 else 'hd'
-W,H=(1280,720) if name=='wide' else (1024,768)
+W,H=(1280,720) if name=='wide' else (640,480) if name=='portable' else (1024,768)
 VW=W;DX=W-640;DY=H-480
 r=json.loads(pathlib.Path('compat/'+name+'.json').read_text())
 s=pathlib.Path(sys.argv[1]).read_bytes();assert hashlib.sha256(s).hexdigest()==r['SourceSHA256']
@@ -14,7 +14,7 @@ for e in r['Edits']:
  o=e['Offset'];old=bytes.fromhex(e['Before']);new=bytes.fromhex(e['After']);assert b[o:o+len(old)]==old;b[o:o+len(old)]=new
 b.extend(bytes.fromhex(r['AppendHex']));assert hashlib.sha256(b).hexdigest()==r['OutputSHA256']
 p=pefile.PE(data=bytes(b));sec=p.sections[-1];base=p.OPTIONAL_HEADER.ImageBase
-assert sec.Name.rstrip(b'\0')==b'.hd'
+assert sec.Name.rstrip(b'\0')==(b'.rules' if name=='portable' else b'.hd')
 assert sec.VirtualAddress+sec.Misc_VirtualSize<=p.OPTIONAL_HEADER.SizeOfImage
 assert 0x10000+VW*H<sec.Misc_VirtualSize
 u=Uc(UC_ARCH_X86,UC_MODE_32);u.mem_map(base,p.OPTIONAL_HEADER.SizeOfImage);u.mem_write(base,p.get_memory_mapped_image())

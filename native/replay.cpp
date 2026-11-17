@@ -332,6 +332,9 @@ void begin(){
   // Start a local battle first so native resources and DirectDraw surfaces exist.
   // The native full loader restores the recorded map, player slots and objects.
   if(!checkpointOperation(true)){fail("ERROR: initial save restore failed");return;}
+  // Save files include the recorder's minimap origin. Rebind local UI after
+  // loading so a wide-screen checkpoint cannot draw beyond a smaller surface.
+  ((void(__thiscall*)(void*))0x49de70)((void*)0x7a2ce8);
  }else{
   // Saving emits a UI notification packet. Preserve the queue around that call.
   uint8_t queue[0x34c];memcpy(queue,(void*)(0xa6e9a8+0x6cc),sizeof(queue));
@@ -470,6 +473,12 @@ uint32_t __cdecl advanceHook(){
  uint32_t result=((uint32_t(__cdecl*)())advance)();
  inside=false;
  State after=snapshot();
+#ifdef MYTH_SYNC_TEST
+ // Test-only cross-resolution trace of the game's own network checksum.
+ static FILE* syncTrace=nullptr;
+ if(!syncTrace)syncTrace=_wfopen((root+L"\\sync-trace.txt").c_str(),L"wb");
+ if(syncTrace){fprintf(syncTrace,"%u %u %u %08x %08x %08x\n",frames,after.tick,after.seed,after.hash,mem<uint32_t>(0xb2e9a8),mem<uint32_t>(0xa6ea60));fflush(syncTrace);}
+#endif
  if(playback){
   // The native input/timer gate can return before simulation starts. Such calls
   // are not frames and must not consume the next recorded simulation frame.

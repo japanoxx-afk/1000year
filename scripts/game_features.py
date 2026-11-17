@@ -1,4 +1,6 @@
-"""V1.070KR local-player selection and HUD helpers. No simulation state changes."""
+"""Shared V1.070KR gameplay rules, local selection and HUD helpers.
+Gameplay hooks must be installed in every resolution, including portable mode.
+"""
 def install(g):
  asm,b,raw,va,hook,W=(g[n] for n in ('asm','b','raw','va','hook','W'))
  def emit(code):
@@ -88,6 +90,9 @@ def install(g):
  add esp,24; ret;
  move: popad; jmp 0x4358a0''')
  hook(0x40e627,5,f'call {rally}; jmp 0x40e62c')
+ # Original-resolution clients need identical simulation/input rules, without
+ # importing HD resource layout, selection widgets or a display-mode switch.
+ if g.get('rules_only'):return dict(rally=rally,exit_score=exit_score)
  origin=va+0x2400;idle=origin+4;count=origin+8;busy=origin+12;keys=origin+16
  qcount=origin+20;qread=origin+24;qwrite=origin+28;queue=va+0x4000
  fmt=va+0x2500;txt=va+0x2540;group=va+0x2800

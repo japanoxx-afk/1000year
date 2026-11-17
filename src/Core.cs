@@ -9,7 +9,7 @@ namespace Myth {
  public sealed class Recipe { public string SourceSHA256,OutputSHA256,AppendHex; public Edit[] Edits; }
  public sealed class Settings { public string GameDirectory=""; public int Mode=3; public bool Fullscreen=false; public bool AutoUpdate=true; public bool RecordReplay=true; public int MusicVolume=100; }
  public static class Core {
-  public const string Version="0.6.11";
+  public const string Version="0.6.12";
   public static string Home=AppDomain.CurrentDomain.BaseDirectory;
   public static string UserHome=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"1000year");
   public static string Hash(string path) {using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -32,7 +32,8 @@ namespace Myth {
    if(mode<0 || mode>3)throw new IOException("지원하지 않는 해상도 설정입니다.");
    directory=Path.GetFullPath(directory);string source=Path.Combine(directory,"MMyth.exe");if(!File.Exists(source)||!Directory.Exists(Path.Combine(directory,"tile")))throw new IOException("MMyth.exe와 tile 폴더가 있는 게임 폴더를 선택하세요.");
    bool legacy=mode==3&&replayPatchHash=="2add14efd120cdfacfc6318e4107d4ad496a352f787311b9c0b9b15082438606";
-   var recipe=new JavaScriptSerializer().Deserialize<Recipe>(System.Text.Encoding.UTF8.GetString(Resource(legacy?"Myth.LegacyWide060":mode==3?"Myth.WideRecipe":mode==2?"Myth.HDRecipe":"Myth.PortableRecipe")));
+   bool legacyPortable=mode<2&&replayPatchHash=="76d5ea1ea26702d8fd1edba1c9bbcaf7433e5e736118e1faf23d3480f787d8c2";
+   var recipe=new JavaScriptSerializer().Deserialize<Recipe>(System.Text.Encoding.UTF8.GetString(Resource(legacy?"Myth.LegacyWide060":legacyPortable?"Myth.LegacyPortable0611":mode==3?"Myth.WideRecipe":mode==2?"Myth.HDRecipe":"Myth.PortableRecipe")));
    byte[] patched=Patch(File.ReadAllBytes(source),recipe);
    string target=Path.Combine(directory,mode==3?"MMyth.Wide.exe":mode==2?"MMyth.HD.exe":"MMyth.Portable.exe");
    File.WriteAllBytes(target+".partial",patched);if(File.Exists(target))File.Delete(target);File.Move(target+".partial",target);
