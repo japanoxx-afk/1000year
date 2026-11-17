@@ -7,16 +7,18 @@ using System.Diagnostics;
 namespace Myth {
  public sealed class Edit { public int Offset; public string Before,After,Note; }
  public sealed class Recipe { public string SourceSHA256,OutputSHA256,AppendHex; public Edit[] Edits; }
- public sealed class Settings { public string GameDirectory=""; public int Mode=3; public bool Fullscreen=false; public bool AutoUpdate=true; public bool RecordReplay=true; }
+ public sealed class Settings { public string GameDirectory=""; public int Mode=3; public bool Fullscreen=false; public bool AutoUpdate=true; public bool RecordReplay=true; public int MusicVolume=100; }
  public static class Core {
-  public const string Version="0.6.10";
+  public const string Version="0.6.11";
   public static string Home=AppDomain.CurrentDomain.BaseDirectory;
   public static string UserHome=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"1000year");
   public static string Hash(string path) {using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
   public static string HashBytes(byte[] data) {using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(data)).Replace("-","").ToLowerInvariant();}
   public static byte[] Hex(string s) {return Enumerable.Range(0,s.Length/2).Select(i=>Convert.ToByte(s.Substring(i*2,2),16)).ToArray();}
   public static Settings Load() { try{return new JavaScriptSerializer().Deserialize<Settings>(File.ReadAllText(Path.Combine(UserHome,"settings.json")))??new Settings();}catch{return new Settings();} }
-  public static void Save(Settings s) {Directory.CreateDirectory(UserHome); File.WriteAllText(Path.Combine(UserHome,"settings.json"),new JavaScriptSerializer().Serialize(s));}
+  public static string MusicVolumeFile {get{return Path.Combine(UserHome,"music-volume.txt");}}
+  public static void SaveMusicVolume(int volume) {Directory.CreateDirectory(UserHome);string temporary=MusicVolumeFile+"."+Guid.NewGuid().ToString("N")+".tmp";try{File.WriteAllText(temporary,Math.Max(0,Math.Min(100,volume)).ToString(System.Globalization.CultureInfo.InvariantCulture),System.Text.Encoding.ASCII);if(File.Exists(MusicVolumeFile))File.Replace(temporary,MusicVolumeFile,null);else File.Move(temporary,MusicVolumeFile);}finally{if(File.Exists(temporary))File.Delete(temporary);}}
+  public static void Save(Settings s) {Directory.CreateDirectory(UserHome);s.MusicVolume=Math.Max(0,Math.Min(100,s.MusicVolume));File.WriteAllText(Path.Combine(UserHome,"settings.json"),new JavaScriptSerializer().Serialize(s));SaveMusicVolume(s.MusicVolume);}
   public static void Log(string s) {try{Directory.CreateDirectory(UserHome);File.AppendAllText(Path.Combine(UserHome,"launcher.log"),DateTime.Now.ToString("s")+" "+s+Environment.NewLine);}catch{}}
   public static byte[] Patch(byte[] source,Recipe r) {
    if(HashBytes(source)!=r.SourceSHA256)throw new IOException("지원하지 않는 게임 실행 파일입니다. V1.070KR 원본 MMyth.exe가 필요합니다.");
