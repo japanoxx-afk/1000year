@@ -44,7 +44,6 @@ for a,x in [(0x41c685,H),(0x4aedd3,W),(0x4aedd8,H),(0x47158c,H),(0x471591,W)]:d(
 for a in [0x46aff7,0x46b02d,0x47f9b7,0x47f9d7]:d(a,H-1,'viewport bottom')
 for a in [0x46affc,0x46b019,0x47f9bc,0x47f9c8]:d(a,VW-1,'viewport right')
 for a,x in [(0x47f9e9,W),(0x47f9f3,H),(0x47fe3f,H),(0x47fe44,VW),(0x47fe49,buf),(0x47fe82,H-1),(0x47fe87,VW-1),(0x480556,H-1),(0x48055b,VW-1),(0x46bdc0,buf),(0x46bdc5,H),(0x46bdca,VW)]:d(a,x,'expanded terrain cache')
-patch(0x47fe99,asm(0x47fe99,'jmp 0x480553'),'full redraw bypasses fixed-size incremental copy')
 md=capstone.Cs(3,4);md.detail=True
 for a,z in [(0x480588,0x480809),(0x480850,0x480c30)]:
  for i in md.disasm(p.get_data(a-0x400000,z-a),a):
@@ -72,6 +71,8 @@ def hook(addr,length,code):
  target=va+cursor;blob=asm(target,code);b[raw+cursor:raw+cursor+len(blob)]=blob;cursor=(cursor+len(blob)+15)&~15
  patch(addr,asm(addr,'jmp '+hex(target))+b'\x90'*(length-5),'HD trampoline')
 cursor=0
+from terrain_cache import install as install_terrain_cache
+terrain_cache=install_terrain_cache(globals())
 # Background remains a 640x480 resource. Blit into the lower-right corner, preserving source pitch.
 hook(0x46c503,5,'mov eax,640; jmp 0x46c508')
 hook(0x46c546,6,f'push {DX}; push edx; call dword ptr [edi+0x1c]; jmp 0x46c54c')
@@ -108,6 +109,7 @@ hook(0x41c88d,6,'cmp dword ptr [0x651510],0; jne 0x41c8c2; push 0; push 1; push 
 # Bottom hint retains its original left x=50; only screen-bottom anchoring remains.
 from game_features import install
 features=install(globals())
+features['terrainCache']=terrain_cache
 assert cursor<0x2000
 assert 0x10000+VW*H<=0x100000
 # Refresh canonical recipe after the final hook.

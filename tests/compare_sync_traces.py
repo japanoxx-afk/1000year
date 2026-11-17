@@ -18,4 +18,4 @@ for argument in sys.argv[1:]:
 for argument,rows in zip(sys.argv[2:],traces[1:]):
  assert len(rows)==len(traces[0]),(argument,'frame count differs')
  for index,value in traces[0].items():assert value==rows[index],(argument,index,value,rows[index])
-print('PASS:',len(traces[0]),'frames agree across',len(traces),'resolutions: tick, RNG, unit/resource state, native unit accumulator and network RNG')
+print('PASS:',len(traces[0]),'frames agree across',len(traces),'sessions: tick, RNG, unit/resource state, native unit accumulator and network RNG')

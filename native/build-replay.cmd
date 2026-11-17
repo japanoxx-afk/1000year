@@ -14,5 +14,9 @@ if /I "%~1"=="hud-test" set "extra=/DMYTH_HUD_TEST"
 if /I "%~1"=="hud-test" set "output=MythHudTest"
 if /I "%~1"=="sync-test" set "extra=/DMYTH_SYNC_TEST"
 if /I "%~1"=="sync-test" set "output=MythSyncTest"
+if /I "%~1"=="perf-test" set "extra=/DMYTH_SYNC_TEST /DMYTH_PERF_TEST /DMYTH_REPLAY_TEST"
+if /I "%~1"=="perf-test" set "output=MythRenderPerf"
+if /I "%~1"=="perf-baseline" set "extra=/DMYTH_SYNC_TEST /DMYTH_PERF_TEST /DMYTH_REPLAY_TEST /DMYTH_TEXT_NO_CACHE"
+if /I "%~1"=="perf-baseline" set "output=MythRenderPerfBaseline"
 cl /nologo /utf-8 /std:c++17 /EHsc /W4 /O2 /MT /LD %extra% native\replay.cpp /Fo:dist\native\%output%.obj /Fe:dist\native\%output%.dll /link user32.lib gdi32.lib ole32.lib strmiids.lib
 exit /b %errorlevel%

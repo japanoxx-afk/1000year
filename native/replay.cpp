@@ -14,6 +14,7 @@
 #include <dshow.h>
 
 namespace {
+#include "text_mask.h"
 template<class T> T& mem(uintptr_t p) {return *reinterpret_cast<T*>(p);}
 struct State {uint32_t tick,seed,units,hash;};
 struct Packet {uint8_t bytes[104];};
@@ -43,6 +44,9 @@ void setSpeedKeys(uint32_t down){uint32_t pressed=down&~speedKeys;speedKeys=down
 int64_t playbackClock=0,clockFrequency=0;
 int64_t counterNow(){LARGE_INTEGER value;QueryPerformanceCounter(&value);return value.QuadPart;}
 int64_t framePeriod(){return clockFrequency*tickMilliseconds*100/(1000*speed);}
+#ifdef MYTH_PERF_TEST
+#include "render_profile.h"
+#endif
 char checkpoint[MAX_PATH]{};
 WNDPROC previousWindowProc=nullptr;
 void writeSpeed(){FILE* f=_wfopen((root+L"\\control.txt").c_str(),L"wb");if(f){if(speed==150)fputs("speed1.5",f);else fprintf(f,"speed%u",speed/100);fclose(f);}}
@@ -184,31 +188,24 @@ void drawResources(){
  if(!playback||(!active&&!completed)||failed||mem<int32_t>(0x115e304)!=8)return;
  void* surface=mem<void*>(0x65181c);int width=mem<int32_t>(0x115e2fc);if(!surface||width<434||width>8192)return;
  restoreResources();
- HDC dc=CreateCompatibleDC(nullptr);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=430;info.bmiHeader.biHeight=-148;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;void* pixels=nullptr;
- HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&pixels,nullptr,0);if(!dc||!bitmap){if(dc)DeleteDC(dc);if(bitmap)DeleteObject(bitmap);return;}
- HGDIOBJ old=SelectObject(dc,bitmap);auto raster=(uint32_t*)pixels;std::fill(raster,raster+430*148,0x00ff00ff);
- static HFONT font=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,HANGEUL_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,DEFAULT_PITCH,L"굴림");
- auto oldFont=font?SelectObject(dc,font):nullptr;SetBkMode(dc,TRANSPARENT);
- auto text=[&](int x,int y,const wchar_t* value){int n=(int)wcslen(value);SetTextColor(dc,RGB(0,0,0));TextOutW(dc,x+1,y+1,value,n);SetTextColor(dc,RGB(255,255,255));TextOutW(dc,x,y,value,n);};
+ std::vector<TextRun> runs;auto text=[&](int x,int y,const wchar_t* value){runs.push_back({x,y,value});};
  text(0,2,L"플레이어");text(150,2,L"쌀");text(235,2,L"나무");text(320,2,L"전비");
  int y=18;for(const auto& r:playerResources()){
   wchar_t label[64],value[64];swprintf_s(label,L"P%u %s",r.slot+1,r.name);text(0,y,label);
   swprintf_s(value,L"%d",r.rice);text(150,y,value);swprintf_s(value,L"%d",r.wood);text(235,y,value);swprintf_s(value,L"%d/%d",r.population,r.limit);text(320,y,value);y+=16;
- }GdiFlush();
+ }if(!resourceMask.update(runs))return;
  uint8_t desc[124];if(lockSurface(surface,desc)){
   auto target=mem<uint8_t*>((uintptr_t)desc+36);int pitch=mem<int32_t>((uintptr_t)desc+16);
   resourceLeft=width-430;resourceWidth=430;
   if(target&&pitch>=width){resourceUnderlay.resize(430*148);
-   for(int row=0;row<148;++row){auto destination=target+(row+32)*pitch+resourceLeft;memcpy(resourceUnderlay.data()+row*430,destination,430);
-    for(int x=0;x<430;++x){uint32_t value=raster[row*430+x]&0xffffff;if(value!=0xff00ff)destination[x]=value?255:0;}
-   }resourceSurface=surface;++resourceCommits;
+   for(int row=0;row<148;++row)memcpy(resourceUnderlay.data()+row*430,target+(row+32)*pitch+resourceLeft,430);
+   resourceMask.paint(target,pitch,resourceLeft,32);resourceSurface=surface;++resourceCommits;
 #ifdef MYTH_OBSERVER_CAMERA_TEST
-   static unsigned missing=0;for(int row=0;row<148;++row)for(int x=0;x<430;++x){uint32_t value=raster[row*430+x]&0xffffff;if(value!=0xff00ff&&target[(row+32)*pitch+resourceLeft+x]!=(value?255:0))++missing;}
+   static unsigned missing=0;for(const auto& pixel:resourceMask.pixels)if(target[(pixel.y+32)*pitch+resourceLeft+pixel.x]!=pixel.color)++missing;
    if(resourceCommits%60==0){FILE* f=_wfopen((root+L"\\observer-validation.txt").c_str(),L"wb");if(f){fprintf(f,"presentedPanels=%u missingGlyphPixels=%u panelLeft=%d screenWidth=%d\n",resourceCommits,missing,resourceLeft,width);fprintf(f,"hiddenAudio=%u waveCalls=%u playingEffects=%u heroEffectsSkipped=%u\n",hiddenAudioEvents,effectPlays,playingEffects,heroEffectsSkipped);for(unsigned i=0;i<8;++i)fprintf(f,"P%u draws=%u\n",i+1,observerDrawn[i]);fclose(f);}}
 #endif
   }unlockSurface(surface);
  }
- if(oldFont)SelectObject(dc,oldFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
 }
 // Keep the native map traversal/depth order, but draw observer sprites using
 // the owner's daylight palette, bypassing the local-player cached fog tint.
@@ -258,17 +255,24 @@ void drawTimer(){
  uint32_t tick=mem<uint32_t>(0xa6ea50);
  if(!timerTickStep||tick<timerLastTick)timerTickStep=playback?tickMilliseconds:((uint32_t(__cdecl*)())0x466960)();timerLastTick=tick;
  auto label=elapsedLabel(tick,timerTickStep);restoreTimer();
- HDC dc=CreateCompatibleDC(nullptr);if(!dc)return;BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=150;info.bmiHeader.biHeight=-20;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;void* pixels=nullptr;
- HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&pixels,nullptr,0);if(!bitmap){DeleteDC(dc);return;}
- auto old=SelectObject(dc,bitmap);auto raster=(uint32_t*)pixels;std::fill(raster,raster+150*20,0x00ff00ff);
- static HFONT font=CreateFontW(-14,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,HANGEUL_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,DEFAULT_PITCH,L"굴림");auto oldFont=font?SelectObject(dc,font):nullptr;SetBkMode(dc,TRANSPARENT);
- SetTextColor(dc,RGB(0,0,0));TextOutW(dc,1,1,label.c_str(),(int)label.size());SetTextColor(dc,RGB(255,255,255));TextOutW(dc,0,0,label.c_str(),(int)label.size());GdiFlush();
+ if(!timerMask.update({{0,0,label}}))return;
  timerLeft=width>=1024?width/2-54:8;timerTop=width>=1024?8:32;
- uint8_t desc[124];if(lockSurface(surface,desc)){auto target=mem<uint8_t*>((uintptr_t)desc+36);int pitch=mem<int32_t>((uintptr_t)desc+16);if(target&&pitch>=width){timerUnderlay.resize(150*20);for(int row=0;row<20;++row){auto destination=target+(row+timerTop)*pitch+timerLeft;memcpy(timerUnderlay.data()+row*150,destination,150);for(int x=0;x<150;++x){auto value=raster[row*150+x]&0xffffff;if(value!=0xff00ff)destination[x]=value?255:0;}}timerSurface=surface;}unlockSurface(surface);}
- if(oldFont)SelectObject(dc,oldFont);SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
+ uint8_t desc[124];if(lockSurface(surface,desc)){auto target=mem<uint8_t*>((uintptr_t)desc+36);int pitch=mem<int32_t>((uintptr_t)desc+16);if(target&&pitch>=width){timerUnderlay.resize(150*20);for(int row=0;row<20;++row)memcpy(timerUnderlay.data()+row*150,target+(row+timerTop)*pitch+timerLeft,150);timerMask.paint(target,pitch,timerLeft,timerTop);timerSurface=surface;}unlockSurface(surface);}
 }
-uint32_t __fastcall observerFog(void* self,void*){ObserverView view;return ((uint32_t(__thiscall*)(void*))0x47fa10)(self);}
+uint32_t __fastcall observerFog(void* self,void*){ObserverView view;
+#ifdef MYTH_PERF_TEST
+ auto started=counterNow();
+#endif
+ auto result=((uint32_t(__thiscall*)(void*))0x47fa10)(self);
+#ifdef MYTH_PERF_TEST
+ profileRender(0,started);
+#endif
+ return result;}
 uint32_t __cdecl observerBackground(){ObserverView view;
+#ifdef MYTH_PERF_TEST
+ static unsigned step=0;const unsigned ticks[]={40,200,400,600,800};const int positions[][2]={{100,18},{20,100},{0,0},{159,159},{75,50}};
+ if(step<5&&mem<uint32_t>(0xa6ea50)>=ticks[step]){mem<int32_t>(0xb2d88c)=positions[step][0];mem<int32_t>(0xb2d890)=positions[step][1];mem<int32_t>(0xb2d888)=1;++step;}
+#endif
 #ifdef MYTH_OBSERVER_CAMERA_TEST
  static bool moved=false;if(!moved&&mem<uint32_t>(0xa6ea50)>10){moved=true;mem<int32_t>(0xb2d88c)=100;mem<int32_t>(0xb2d890)=18;mem<int32_t>(0xb2d888)=1;}
 #endif
@@ -286,7 +290,12 @@ void dumpObserverFrame(){
  wchar_t name[64];swprintf_s(name,L"\\observer-frame-%u.bmp",rendered);FILE* f=_wfopen((root+name).c_str(),L"wb");if(f){BITMAPFILEHEADER header{};header.bfType=0x4d42;header.bfOffBits=14+40+1024;header.bfSize=header.bfOffBits+width*height;BITMAPINFOHEADER info{};info.biSize=40;info.biWidth=width;info.biHeight=-height;info.biPlanes=1;info.biBitCount=8;info.biSizeImage=width*height;fwrite(&header,14,1,f);fwrite(&info,40,1,f);fwrite(colors,1024,1,f);for(int row=0;row<height;++row)fwrite(pixels+row*pitch,width,1,f);fclose(f);}unlockSurface(surface);
 }
 #endif
-uint32_t __cdecl observerHud(){serviceBattleMusic();ObserverView view;drawResources();drawTimer();
+uint32_t __cdecl observerHud(){serviceBattleMusic();ObserverView view;
+#ifdef MYTH_PERF_TEST
+ auto started=counterNow();drawResources();profileRender(1,started);started=counterNow();drawTimer();profileRender(2,started);
+#else
+ drawResources();drawTimer();
+#endif
 #if defined(MYTH_OBSERVER_CAMERA_TEST) || defined(MYTH_HUD_TEST)
  dumpObserverFrame();
 #endif
@@ -294,6 +303,9 @@ auto result=((uint32_t(__cdecl*)())0x46c380)();restoreTimer();restoreResources()
 bool write(const void* p,size_t n){if(failed)return false;if(!output||ftell(output)<0||ftell(output)+n>128u*1024*1024||fwrite(p,1,n,output)!=n){fail("ERROR: replay write failed or size limit reached");return false;}return true;}
 bool read(void* p,size_t n){if(cursor>input.size()||n>input.size()-cursor){fail("ERROR: truncated replay");return false;}memcpy(p,input.data()+cursor,n);cursor+=n;return true;}
 void finish(){
+#ifdef MYTH_PERF_TEST
+ profileFinish();
+#endif
  if(playback&&musicAvailable)requestMusic(0);
  if(output){uint32_t end=0xffffffff;write(&end,4);fflush(output);fclose(output);output=nullptr;}
  active=false;
@@ -452,6 +464,9 @@ bool pauseRequested(){
  return paused;
 }
 uint32_t __cdecl advanceHook(){
+#ifdef MYTH_PERF_TEST
+ if(completed){Sleep(10);return 0;}
+#endif
  if(completed)return playback?0:((uint32_t(__cdecl*)())advance)();
  if(failed)return playback?0:((uint32_t(__cdecl*)())advance)();
  if(playback&&pauseRequested()){playbackClock=counterNow();return 0;}
@@ -496,6 +511,9 @@ uint32_t __cdecl advanceHook(){
  if(playback&&after.tick>frame.before.tick){playbackClock+=framePeriod();int64_t now=counterNow();if(now-playbackClock>framePeriod()*2)playbackClock=now;}
  if(output&&frames%300==0)fflush(output);
  if(frames%100==0){char text[80];sprintf_s(text,"%s %u %u",playback?"PLAYING":"RECORDING",frames,after.tick);status(text);}
+#ifdef MYTH_PERF_TEST
+ if(!playback&&frames>=1000)finish();
+#endif
  return result;
 }
 void __cdecl bootstrap(){
@@ -524,13 +542,20 @@ void __cdecl bootstrap(){
  // Follow the native LOAD return path: full loader, battle graphics, state 3.
  if(state!=9&&state!=220)return;
 #ifdef MYTH_REPLAY_TEST
- if(fromSave){if(!checkpointOperation(true)){fail("ERROR: fixture restore failed");return;}}
+ if(fromSave){
+#ifndef MYTH_PERF_TEST
+  if(!checkpointOperation(true)){fail("ERROR: fixture restore failed");return;}
+#endif
+ }
 #endif
  // The renderer must be in battle mode BEFORE loading the checkpoint palette.
  // Recreating DirectDraw surfaces afterwards discarded that palette (black
  // screen), and bypassing the menu exit left menumusic.YAV playing.
  if(playback)((void(__cdecl*)())0x41f980)();
  ((void(__cdecl*)())0x46afd0)();
+#ifdef MYTH_PERF_TEST
+ if(fromSave){((void(__cdecl*)())0x41f980)();if(!checkpointOperation(true)){fail("ERROR: perf fixture restore failed");return;}((void(__thiscall*)(void*))0x49de70)((void*)0x7a2ce8);}
+#endif
  if(playback){
   begin();if(failed)return;
   HWND window=mem<HWND>(0x7a2ce0);
@@ -650,6 +675,11 @@ bool install(){
   }
  }
  if(!playback){if(mem<uint8_t>(0x471fa8)!=0xe8||0x471fad+mem<int32_t>(0x471fa9)!=0x46c380)return false;uint8_t hud[5]={0xe8};mem<int32_t>((uintptr_t)hud+1)=(int32_t)((uintptr_t)observerHud-0x471fad);if(!patch(0x471fa8,hud,5))return false;}
+#ifdef MYTH_PERF_TEST
+ if(!playback)for(auto site:{std::pair<uintptr_t,uintptr_t>{0x46c68d,(uintptr_t)observerFog},{0x471f02,(uintptr_t)observerBackground}}){uint8_t code[5]={0xe8};mem<int32_t>((uintptr_t)code+1)=(int32_t)(site.second-site.first-5);if(!patch(site.first,code,5))return false;}
+ // Keep benchmark commands/camera independent of physical desktop input.
+ if(!playback&&(!patch(0x435040,"\xb8\x01\x00\x00\x00\xc3",6)||!patch(0x46ce00,"\xc3",1)))return false;
+#endif
  if(!jump(0x470cd1,(void*)loopHook,7)||!patch(0x46c6a9,timer,5)||!patch(0x46c69c,call,5)||!jump(0x48d170,(void*)pathHook,5)||
     !jump(0x4353a1,(void*)packetHook,6)||!jump(0x435356,(void*)queueHook,7)||!jump(0x46c5a0,(void*)advanceHook,8))return false;
  status("READY");return true;

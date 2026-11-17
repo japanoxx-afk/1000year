@@ -52,15 +52,16 @@ int main(){
  mem<int32_t>(0x115e2fc)=1280;mem<int32_t>(0x115e300)=720;mem<int32_t>(0x115e304)=8;mem<int32_t>(0x115e308)=512;
  void* vtable[33]{};vtable[25]=(void*)fixtureLock;vtable[32]=(void*)fixtureUnlock;void** object=vtable;mem<void*>(0x65181c)=&object;
  std::fill(fixturePixels.begin(),fixturePixels.end(),uint8_t(67));auto terrain=fixturePixels;
- playback=true;active=true;failed=false;drawResources();assert(resourceCommits==1&&resourceLeft==850&&fixtureLocks==fixtureUnlocks);
+ playback=true;active=true;failed=false;auto resourceBuilds=resourceMask.builds;drawResources();assert(resourceMask.builds==resourceBuilds+1);assert(resourceCommits==1&&resourceLeft==850&&fixtureLocks==fixtureUnlocks);
  auto firstImage=fixturePixels;bool hasText=false;for(int y=34;y<66;++y)for(int x=850;x<1280;++x)if(fixturePixels[y*1344+x]!=67)hasText=true;assert(hasText);
  assert(fixturePixels[0]==67);restoreResources();assert(fixturePixels==terrain&&fixtureLocks==fixtureUnlocks);
- mem<int32_t>(0x115e308)=640;drawResources();assert(resourceLeft==850&&fixturePixels==firstImage);restoreResources();assert(fixturePixels==terrain);
+ mem<int32_t>(0x115e308)=640;drawResources();assert(resourceMask.builds==resourceBuilds+1);assert(resourceLeft==850&&fixturePixels==firstImage);restoreResources();assert(fixturePixels==terrain);
  // Updated numbers start with the clean terrain, leaving no previous glyphs.
- mem<int32_t>(0xb137bc+0x14)=1;drawResources();assert(fixturePixels!=firstImage);restoreResources();assert(fixturePixels==terrain);mem<int32_t>(0xb137bc+0x14)=12345;
+ mem<int32_t>(0xb137bc+0x14)=1;drawResources();assert(resourceMask.builds==resourceBuilds+2);assert(fixturePixels!=firstImage);restoreResources();assert(fixturePixels==terrain);mem<int32_t>(0xb137bc+0x14)=12345;
  // Timer works with recording disabled, without enabling observer vision.
  playback=false;hudOnly=true;active=false;mem<uint16_t>(0x4dec90)=3;mem<uint32_t>(0xa6ea50)=1200;timerTickStep=50;timerLastTick=1200;
- drawTimer();assert(timerLeft==586&&timerTop==8&&fixturePixels!=terrain);auto timerFrame=fixturePixels;restoreTimer();assert(fixturePixels==terrain);drawTimer();assert(fixturePixels==timerFrame);restoreTimer();assert(fixturePixels==terrain);hudOnly=false;
+ auto timerBuilds=timerMask.builds;drawTimer();assert(timerMask.builds==timerBuilds+1);assert(timerLeft==586&&timerTop==8&&fixturePixels!=terrain);auto timerFrame=fixturePixels;restoreTimer();assert(fixturePixels==terrain);drawTimer();assert(timerMask.builds==timerBuilds+1&&fixturePixels==timerFrame);restoreTimer();assert(fixturePixels==terrain);
+ mem<uint32_t>(0xa6ea50)=1220;drawTimer();assert(timerMask.builds==timerBuilds+2&&fixturePixels!=timerFrame);restoreTimer();assert(fixturePixels==terrain);hudOnly=false;
  mem<void*>(0x65181c)=nullptr;
  auto rows=playerResources();assert(rows.size()==1&&rows[0].rice==12345&&rows[0].wood==67890&&rows[0].population==24&&rows[0].limit==1600);
  memset((void*)0xb10000,0,0x30000);active=false;
