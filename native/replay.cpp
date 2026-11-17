@@ -474,10 +474,11 @@ uint32_t __cdecl advanceHook(){
  inside=false;
  State after=snapshot();
 #ifdef MYTH_SYNC_TEST
- // Test-only cross-resolution trace of the game's own network checksum.
+ // Test-only trace: stable state, native unit accumulator, and the frame RNG
+ // used by the network verifier (48760B sends A6EA60 & 15).
  static FILE* syncTrace=nullptr;
  if(!syncTrace)syncTrace=_wfopen((root+L"\\sync-trace.txt").c_str(),L"wb");
- if(syncTrace){fprintf(syncTrace,"%u %u %u %08x %08x %08x\n",frames,after.tick,after.seed,after.hash,mem<uint32_t>(0xb2e9a8),mem<uint32_t>(0xa6ea60));fflush(syncTrace);}
+ if(syncTrace&&(dispatchEntered||!equal(after,frame.before)||equal(frame.before,frame.after))){fprintf(syncTrace,"%u %u %u %08x %08x %08x\n",frames,after.tick,after.seed,after.hash,mem<uint32_t>(0xb2e9a8),mem<uint32_t>(0xa6ea60));fflush(syncTrace);}
 #endif
  if(playback){
   // The native input/timer gate can return before simulation starts. Such calls
