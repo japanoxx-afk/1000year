@@ -106,7 +106,9 @@ void drawHeroes(){
   }
   ((int(__thiscall*)(void*,void*))0x4afb30)((void*)0x115e2f8,surface);
  }
- uint8_t mana=nearestColor(48,96,240,0xd6),high=nearestColor(32,200,48,0xd6),middle=nearestColor(232,208,32,0xd5),low=nearestColor(224,32,24,0xd7);
+ // Palette reads go through the graphics wrapper's lock; refresh twice a second.
+ static uint8_t mana=0xd6,high=0xd6,middle=0xd5,low=0xd7;static DWORD paletteChecked=0;
+ if(!paletteChecked||GetTickCount()-paletteChecked>=500){paletteChecked=GetTickCount();mana=nearestColor(48,96,240,0xd6);high=nearestColor(32,200,48,0xd6);middle=nearestColor(232,208,32,0xd5);low=nearestColor(224,32,24,0xd7);}
  if(lockSurface(surface,desc)){
   auto target=mem<uint8_t*>((uintptr_t)desc+36);int pitch=mem<int32_t>((uintptr_t)desc+16);
   if(target&&pitch>=width)for(size_t i=0;i<heroes.size();++i){

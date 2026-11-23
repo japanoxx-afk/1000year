@@ -103,6 +103,12 @@ int main(){
  // Strict bounded parsing accepts no truncated record, even with an oversized request.
  failed=false;input={1,2,3,4};cursor=0;uint32_t n=0;assert(read(&n,4));assert(n==0x04030201);
  assert(!read(&n,4)&&failed);
+ // Progress status is written off the game thread and never replaces a final state.
+ {wchar_t temp[MAX_PATH];GetTempPathW(MAX_PATH,temp);std::wstring savedRoot=root;root=std::wstring(temp)+L"myth-status-test";CreateDirectoryW(root.c_str(),nullptr);
+  auto readStatus=[&]{char text[32]{};FILE* f=_wfopen((root+L"\\status.txt").c_str(),L"rb");if(f){fread(text,1,31,f);fclose(f);}return std::string(text);};
+  statusFinal=false;progressStatus("RECORDING 100 90");for(int i=0;i<100&&readStatus()!="RECORDING 100 90";++i)Sleep(10);assert(readStatus()=="RECORDING 100 90");
+  status("COMPLETE");progressStatus("RECORDING 200 180");Sleep(100);assert(readStatus()=="COMPLETE");
+  DeleteFileW((root+L"\\status.txt").c_str());RemoveDirectoryW(root.c_str());root=savedRoot;statusFinal=false;}
  // Local hotkeys: F1 moved to Q (old F1 released), only in battle outside chat.
  playback=false;failed=false;
  SetEnvironmentVariableW(L"MYTH_KEYMAP",L"51:70,70:00,25:41");loadKeyMap();
@@ -124,6 +130,6 @@ int main(){
  assert(localWindowProc(nullptr,WM_LBUTTONUP,0,0)==0&&!swallowLeftUp&&forwarded.size()==before);
  mem<int32_t>(0xd375b0)=60;assert(localWindowProc(nullptr,WM_LBUTTONDOWN,0,0)==7);
  heroCards.clear();localPreviousProc=nullptr;
- std::cout<<"PASS: local hotkey translation/release/chat and menu passthrough, polled keys unmapped, hero ownership and card hit testing\n";
+ std::cout<<"PASS: asynchronous progress status never overwrites COMPLETE; local hotkey translation/release/chat and menu passthrough, polled keys unmapped, hero ownership and card hit testing\n";
  std::cout<<"PASS: hero arrival visuals/chime suppression, replay/live HUD timer, raw/derived fog restoration, enemy/dead/embarked visibility, indexed panel stability/clean restoration across pitch changes, positional combat audio, resource rows, x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
 }

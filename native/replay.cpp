@@ -57,10 +57,39 @@ LRESULT CALLBACK replayWindowProc(HWND window,UINT message,WPARAM key,LPARAM dat
  }
  return CallWindowProcA(previousWindowProc,window,message,key,data);
 }
-void status(const char* message) {
+// Status files are written under one lock. Final states (COMPLETE/ERROR) are
+// written at once; periodic progress goes through a worker thread so file
+// creation and antivirus scans on close never stall the game thread, and a
+// late progress line can never overwrite a final state.
+struct StatusLock {CRITICAL_SECTION section;StatusLock(){InitializeCriticalSection(&section);}} statusLockStorage;
+CRITICAL_SECTION& statusLock=statusLockStorage.section;bool statusFinal=false;
+void writeStatus(const char* message){
  std::wstring path=root+L"\\status.txt";
  HANDLE f=CreateFileW(path.c_str(),GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,CREATE_ALWAYS,0,nullptr);
  if(f!=INVALID_HANDLE_VALUE){DWORD n;WriteFile(f,message,(DWORD)strlen(message),&n,nullptr);CloseHandle(f);}
+}
+void status(const char* message) {
+ EnterCriticalSection(&statusLock);
+ if(!strcmp(message,"COMPLETE")||!strncmp(message,"ERROR",5))statusFinal=true;
+ writeStatus(message);LeaveCriticalSection(&statusLock);
+}
+char pendingProgress[80]{};HANDLE progressEvent=nullptr;volatile LONG progressThread=0;
+DWORD WINAPI progressWorker(void*){
+ for(;;){
+  WaitForSingleObject(progressEvent,INFINITE);char text[80];
+  EnterCriticalSection(&statusLock);memcpy(text,pendingProgress,sizeof(text));
+  if(!statusFinal&&text[0])writeStatus(text);LeaveCriticalSection(&statusLock);
+ }
+}
+void progressStatus(const char* message){
+ EnterCriticalSection(&statusLock);strncpy_s(pendingProgress,message,_TRUNCATE);LeaveCriticalSection(&statusLock);
+ if(InterlockedCompareExchange(&progressThread,1,0)==0){
+  progressEvent=CreateEventW(nullptr,FALSE,FALSE,nullptr);
+  HANDLE thread=progressEvent?CreateThread(nullptr,0,progressWorker,nullptr,0,nullptr):nullptr;
+  if(thread){SetThreadPriority(thread,THREAD_PRIORITY_BELOW_NORMAL);CloseHandle(thread);}
+  else{if(progressEvent){CloseHandle(progressEvent);progressEvent=nullptr;}InterlockedExchange(&progressThread,0);status(message);return;}
+ }
+ SetEvent(progressEvent);
 }
 void fail(const char* message){failed=true;status(message);}
 uint32_t hashBytes(uint32_t h,const void* data,size_t size){auto p=(const uint8_t*)data;while(size--){h^=*p++;h*=16777619;}return h;}
@@ -511,7 +540,7 @@ uint32_t __cdecl advanceHook(){
  ++frames;if(playback&&stepping){paused=true;stepping=false;}
  if(playback&&after.tick>frame.before.tick){playbackClock+=framePeriod();int64_t now=counterNow();if(now-playbackClock>framePeriod()*2)playbackClock=now;}
  if(output&&frames%300==0)fflush(output);
- if(frames%100==0){char text[80];sprintf_s(text,"%s %u %u",playback?"PLAYING":"RECORDING",frames,after.tick);status(text);}
+ if(frames%100==0){char text[80];sprintf_s(text,"%s %u %u",playback?"PLAYING":"RECORDING",frames,after.tick);progressStatus(text);}
 #ifdef MYTH_PERF_TEST
  if(!playback&&frames>=1000)finish();
 #endif
