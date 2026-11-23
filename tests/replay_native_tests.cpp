@@ -12,6 +12,8 @@ __declspec(naked) void soundFixture(){__asm {
 std::vector<uint8_t> fixturePixels(1344*720);unsigned fixtureLocks=0,fixtureUnlocks=0;
 HRESULT WINAPI fixtureLock(void*,RECT*,void* result,DWORD,HANDLE){++fixtureLocks;mem<int32_t>((uintptr_t)result+16)=1344;mem<uint8_t*>((uintptr_t)result+36)=fixturePixels.data();return S_OK;}
 HRESULT WINAPI fixtureUnlock(void*,RECT*){++fixtureUnlocks;return S_OK;}
+std::vector<std::pair<UINT,WPARAM>> forwarded;
+LRESULT CALLBACK forwardFixture(HWND,UINT message,WPARAM key,LPARAM){forwarded.push_back({message,key});return 7;}
 int main(){
  // Music OFF and replay completion must never start a decoder thread.
  musicAvailable=true;mem<uint16_t>(0x4dec90)=3;mem<int32_t>(0x7c9cd0)=0;
@@ -101,5 +103,27 @@ int main(){
  // Strict bounded parsing accepts no truncated record, even with an oversized request.
  failed=false;input={1,2,3,4};cursor=0;uint32_t n=0;assert(read(&n,4));assert(n==0x04030201);
  assert(!read(&n,4)&&failed);
+ // Local hotkeys: F1 moved to Q (old F1 released), only in battle outside chat.
+ playback=false;failed=false;
+ SetEnvironmentVariableW(L"MYTH_KEYMAP",L"51:70,70:00,25:41");loadKeyMap();
+ assert(keyMapActive&&keyMap[0x51]==0x70&&keyMap[0x70]==0&&keyMap[0x25]==0x25&&keyMap[0x41]==0x41);
+ localPreviousProc=forwardFixture;mem<uint16_t>(0x4dec90)=3;mem<uint32_t>(0xb9022c)=0;
+ assert(localWindowProc(nullptr,WM_KEYDOWN,0x51,0)==7&&forwarded.back().second==0x70);
+ assert(localWindowProc(nullptr,WM_KEYDOWN,0x70,0)==0&&forwarded.size()==1);
+ mem<uint16_t>(0x78c928+0x51*2)=1;assert(localWindowProc(nullptr,WM_KEYUP,0x51,0)==7&&forwarded.back().second==0x70&&!mem<uint16_t>(0x78c928+0x51*2));
+ mem<uint32_t>(0xb9022c)=1;localWindowProc(nullptr,WM_KEYDOWN,0x51,0);assert(forwarded.back().second==0x51);mem<uint32_t>(0xb9022c)=0;
+ mem<uint16_t>(0x4dec90)=2;localWindowProc(nullptr,WM_KEYDOWN,0x51,0);assert(forwarded.back().second==0x51);mem<uint16_t>(0x4dec90)=3;
+ localWindowProc(nullptr,WM_KEYDOWN,0x25,0);assert(forwarded.back().second==0x25);
+ // Hero cards are hit-tested against the native mouse position; a stale or
+ // foreign handle is consumed without moving the camera.
+ mem<int32_t>(0xcbdc3c)=0;uintptr_t hero=0x7ca6e8+33*2308;memset((void*)hero,0,2308);
+ mem<uint16_t>(0xa79620+33*2)=1;mem<int32_t>(hero+0x9c)=50;mem<uint8_t>(hero+0x324)=1;mem<uint32_t>(hero+0x1d8)=0x20005;mem<int8_t>(hero+0x76)=0;mem<uint32_t>(hero+0x29c)=0x50021;
+ assert(heroUnit(33));mem<int8_t>(hero+0x76)=1;assert(!heroUnit(33));mem<int8_t>(hero+0x76)=0;
+ heroCards={{{4,28,48,80},0x60021}};mem<int32_t>(0xd375b0)=10;mem<int32_t>(0xd375b4)=40;
+ size_t before=forwarded.size();assert(localWindowProc(nullptr,WM_LBUTTONDOWN,0,0)==0&&swallowLeftUp);
+ assert(localWindowProc(nullptr,WM_LBUTTONUP,0,0)==0&&!swallowLeftUp&&forwarded.size()==before);
+ mem<int32_t>(0xd375b0)=60;assert(localWindowProc(nullptr,WM_LBUTTONDOWN,0,0)==7);
+ heroCards.clear();localPreviousProc=nullptr;
+ std::cout<<"PASS: local hotkey translation/release/chat and menu passthrough, polled keys unmapped, hero ownership and card hit testing\n";
  std::cout<<"PASS: hero arrival visuals/chime suppression, replay/live HUD timer, raw/derived fog restoration, enemy/dead/embarked visibility, indexed panel stability/clean restoration across pitch changes, positional combat audio, resource rows, x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
 }

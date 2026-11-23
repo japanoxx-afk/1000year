@@ -7,9 +7,46 @@ using System.Diagnostics;
 namespace Myth {
  public sealed class Edit { public int Offset; public string Before,After,Note; }
  public sealed class Recipe { public string SourceSHA256,OutputSHA256,AppendHex; public Edit[] Edits; }
- public sealed class Settings { public string GameDirectory=""; public int Mode=3; public bool Fullscreen=false; public bool AutoUpdate=true; public bool RecordReplay=true; public int MusicVolume=100; }
+ public sealed class Settings { public string GameDirectory=""; public int Mode=3; public bool Fullscreen=false; public bool AutoUpdate=true; public bool RecordReplay=true; public int MusicVolume=100; public bool Stretch=false; public bool HeroBar=true; public string KeyBindings=""; }
+
+ // Local key translation for the injected engine. A binding "ORIGINAL=NEW"
+ // makes the NEW physical key perform the game's ORIGINAL key. The original key
+ // is released unless another binding uses it. Only the local window messages
+ // change, so every player still sends the same native commands.
+ public static class Hotkeys {
+  public static readonly int[] Keys=BuildKeys();
+  static int[] BuildKeys(){var keys=new System.Collections.Generic.List<int>();for(int k=0x41;k<=0x5a;++k)keys.Add(k);for(int k=0x30;k<=0x39;++k)keys.Add(k);for(int k=0x70;k<=0x7b;++k)keys.Add(k);for(int k=0x60;k<=0x69;++k)keys.Add(k);keys.AddRange(new[]{0x09,0x20,0x08,0x2d,0x2e,0x24,0x23,0x21,0x22,0xba,0xbb,0xbc,0xbd,0xbe,0xbf,0xc0,0xdb,0xdc,0xdd,0xde});return keys.ToArray();}
+  public static bool Allowed(int key){return Array.IndexOf(Keys,key)>=0;}
+  public static string Name(int key){
+   if(key>=0x41&&key<=0x5a||key>=0x30&&key<=0x39)return ((char)key).ToString();
+   if(key>=0x70&&key<=0x7b)return "F"+(key-0x6f);
+   if(key>=0x60&&key<=0x69)return "숫자패드 "+(key-0x60);
+   switch(key){case 0x09:return "Tab";case 0x20:return "Space";case 0x08:return "Backspace";case 0x2d:return "Insert";case 0x2e:return "Delete";case 0x24:return "Home";case 0x23:return "End";case 0x21:return "Page Up";case 0x22:return "Page Down";case 0xba:return ";";case 0xbb:return "=";case 0xbc:return ",";case 0xbd:return "-";case 0xbe:return ".";case 0xbf:return "/";case 0xc0:return "`";case 0xdb:return "[";case 0xdc:return "\\";case 0xdd:return "]";case 0xde:return "'";}
+   return "0x"+key.ToString("X2");
+  }
+  public static System.Collections.Generic.List<int[]> Parse(string text){
+   var result=new System.Collections.Generic.List<int[]>();if(String.IsNullOrWhiteSpace(text))return result;
+   foreach(string item in text.Split(',')){string[] pair=item.Split('=');int original,pressed;
+    if(pair.Length!=2||!Int32.TryParse(pair[0].Trim(),System.Globalization.NumberStyles.HexNumber,null,out original)||!Int32.TryParse(pair[1].Trim(),System.Globalization.NumberStyles.HexNumber,null,out pressed))throw new FormatException("단축키 설정 형식이 올바르지 않습니다.");
+    if(!Allowed(original)||!Allowed(pressed))throw new FormatException("지원하지 않는 단축키입니다: "+item);
+    if(original==pressed)continue;
+    if(result.Exists(r=>r[0]==original))throw new FormatException(Name(original)+" 기능이 두 번 지정되었습니다.");
+    if(result.Exists(r=>r[1]==pressed))throw new FormatException(Name(pressed)+" 키가 두 기능에 지정되었습니다.");
+    result.Add(new[]{original,pressed});
+   }
+   return result;
+  }
+  public static string Format(System.Collections.Generic.IEnumerable<int[]> bindings){return String.Join(",",bindings.Where(b=>b[0]!=b[1]).Select(b=>b[0].ToString("X2")+"="+b[1].ToString("X2")).ToArray());}
+  // Engine format: PHYSICAL:LOGICAL pairs, LOGICAL 00 disables the physical key.
+  public static string Engine(string text){
+   var bindings=Parse(text);var map=new System.Collections.Generic.SortedDictionary<int,int>();
+   foreach(var b in bindings)map[b[1]]=b[0];
+   foreach(var b in bindings)if(!map.ContainsKey(b[0]))map[b[0]]=0;
+   return String.Join(",",map.Select(m=>m.Key.ToString("X2")+":"+m.Value.ToString("X2")).ToArray());
+  }
+ }
  public static class Core {
-  public const string Version="0.6.13";
+  public const string Version="0.7.0";
   public static string Home=AppDomain.CurrentDomain.BaseDirectory;
   public static string UserHome=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"1000year");
   public static string Hash(string path) {using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -28,7 +65,7 @@ namespace Myth {
    if(HashBytes(result)!=r.OutputSHA256)throw new IOException("패치 결과 검증 실패");return result;
   }
   public static byte[] Resource(string name) {using(var s=typeof(Core).Assembly.GetManifestResourceStream(name)){if(s==null)throw new IOException("구성 파일 누락: "+name);using(var m=new MemoryStream()){s.CopyTo(m);return m.ToArray();}}}
-  public static string Prepare(string directory,int mode,bool fullscreen,string replayPatchHash=null) {
+  public static string Prepare(string directory,int mode,bool fullscreen,string replayPatchHash=null,bool stretch=false) {
    if(mode<0 || mode>3)throw new IOException("지원하지 않는 해상도 설정입니다.");
    directory=Path.GetFullPath(directory);string source=Path.Combine(directory,"MMyth.exe");if(!File.Exists(source)||!Directory.Exists(Path.Combine(directory,"tile")))throw new IOException("MMyth.exe와 tile 폴더가 있는 게임 폴더를 선택하세요.");
    bool legacy=mode==3&&replayPatchHash=="2add14efd120cdfacfc6318e4107d4ad496a352f787311b9c0b9b15082438606";
@@ -44,9 +81,9 @@ namespace Myth {
    byte[] wrapper=Resource("Myth.DDraw");
    BackupGraphics(dll);BackupGraphics(ini);
    File.WriteAllBytes(dll,wrapper);
-   File.WriteAllText(ini,"[ddraw]\r\nwidth="+(mode==3?1280:mode==0?640:1024)+"\r\nheight="+(mode==3?720:mode==0?480:768)+"\r\nwindowed=true\r\nfullscreen="+fullscreen.ToString().ToLowerInvariant()+"\r\nmaintas=true\r\nboxing=false\r\nadjmouse=true\r\nrenderer=auto\r\nmaxfps=60\r\nvsync=false\r\n",System.Text.Encoding.ASCII);
+   File.WriteAllText(ini,"[ddraw]\r\nwidth="+(mode==3?1280:mode==0?640:1024)+"\r\nheight="+(mode==3?720:mode==0?480:768)+"\r\nwindowed=true\r\nfullscreen="+fullscreen.ToString().ToLowerInvariant()+"\r\nmaintas="+(!stretch).ToString().ToLowerInvariant()+"\r\nboxing=false\r\nadjmouse=true\r\nrenderer=auto\r\nmaxfps=60\r\nvsync=false\r\n",System.Text.Encoding.ASCII);
    File.WriteAllText(dll+".1000year-managed",Hash(dll));File.WriteAllText(ini+".1000year-managed",Hash(ini));
-   Log("Prepared mode="+mode+" exe="+target+" SHA256="+Hash(target));return target;
+   Log("Prepared mode="+mode+" stretch="+stretch+" exe="+target+" SHA256="+Hash(target));return target;
   }
   static void BackupGraphics(string file){if(File.Exists(file+".1000year-original")||File.Exists(file+".1000year-absent"))return;if(File.Exists(file))File.Copy(file,file+".1000year-original");else File.WriteAllText(file+".1000year-absent","");}
   public static void RestoreGraphics(string directory) {

@@ -14,6 +14,13 @@ class Tests {
  static int count;static void Check(bool ok,string name){if(!ok)throw new Exception(name);Console.WriteLine("PASS "+name);count++;}
  static void Reject(Action f,string name){bool failed=false;try{f();}catch{failed=true;}Check(failed,name);}
  static void Main(string[] args){
+ Check(Hotkeys.Engine("")==""&&Hotkeys.Engine("70=51")=="51:70,70:00","hotkey moves F1 to Q and releases the old F1 key");
+ Check(Hotkeys.Engine("70=51,51=70")=="51:70,70:51","hotkeys swap without disabling either key");
+ Check(Hotkeys.Format(new[]{new[]{0x41,0x41},new[]{0x09,0xC0}})=="09=C0","identity bindings omitted from saved settings");
+ Reject(()=>Hotkeys.Engine("70=51,71=51"),"one physical key cannot drive two functions");
+ Reject(()=>Hotkeys.Engine("25=51"),"polled camera arrow keys are not remappable");
+ Reject(()=>Hotkeys.Engine("70=10"),"polled modifier keys are not remappable");
+ Check(new Settings().HeroBar&&new Settings().KeyBindings=="","hero bar enabled and default hotkeys for old settings");
  string realHome=Core.UserHome;Core.UserHome=Path.Combine(Path.GetTempPath(),"myth-settings-"+Guid.NewGuid().ToString("N"));
  try{Directory.CreateDirectory(Core.UserHome);File.WriteAllText(Path.Combine(Core.UserHome,"settings.json"),"{\"RecordReplay\":true}");Check(Core.Load().MusicVolume==100,"old settings default music volume");var settings=Core.Load();settings.MusicVolume=25;Core.Save(settings);Check(Core.Load().MusicVolume==25&&File.ReadAllText(Core.MusicVolumeFile)=="25","music volume persisted and published");Core.SaveMusicVolume(0);Check(File.ReadAllText(Core.MusicVolumeFile)=="0","music mute published");Core.SaveMusicVolume(200);Check(File.ReadAllText(Core.MusicVolumeFile)=="100","music volume bounded");}finally{Directory.Delete(Core.UserHome,true);Core.UserHome=realHome;}
  var serializer=new JavaScriptSerializer();var source=(args.Length==0||String.IsNullOrEmpty(args[0]))?null:File.ReadAllBytes(args[0]);

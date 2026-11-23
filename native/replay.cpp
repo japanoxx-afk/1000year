@@ -290,16 +290,17 @@ void dumpObserverFrame(){
  wchar_t name[64];swprintf_s(name,L"\\observer-frame-%u.bmp",rendered);FILE* f=_wfopen((root+name).c_str(),L"wb");if(f){BITMAPFILEHEADER header{};header.bfType=0x4d42;header.bfOffBits=14+40+1024;header.bfSize=header.bfOffBits+width*height;BITMAPINFOHEADER info{};info.biSize=40;info.biWidth=width;info.biHeight=-height;info.biPlanes=1;info.biBitCount=8;info.biSizeImage=width*height;fwrite(&header,14,1,f);fwrite(&info,40,1,f);fwrite(colors,1024,1,f);for(int row=0;row<height;++row)fwrite(pixels+row*pitch,width,1,f);fclose(f);}unlockSurface(surface);
 }
 #endif
-uint32_t __cdecl observerHud(){serviceBattleMusic();ObserverView view;
+#include "local_ui.h"
+uint32_t __cdecl observerHud(){serviceBattleMusic();attachLocalInput();ObserverView view;
 #ifdef MYTH_PERF_TEST
  auto started=counterNow();drawResources();profileRender(1,started);started=counterNow();drawTimer();profileRender(2,started);
 #else
- drawResources();drawTimer();
+ drawResources();drawTimer();drawHeroes();
 #endif
 #if defined(MYTH_OBSERVER_CAMERA_TEST) || defined(MYTH_HUD_TEST)
  dumpObserverFrame();
 #endif
-auto result=((uint32_t(__cdecl*)())0x46c380)();restoreTimer();restoreResources();return result;}
+auto result=((uint32_t(__cdecl*)())0x46c380)();restoreHeroes();restoreTimer();restoreResources();return result;}
 bool write(const void* p,size_t n){if(failed)return false;if(!output||ftell(output)<0||ftell(output)+n>128u*1024*1024||fwrite(p,1,n,output)!=n){fail("ERROR: replay write failed or size limit reached");return false;}return true;}
 bool read(void* p,size_t n){if(cursor>input.size()||n>input.size()-cursor){fail("ERROR: truncated replay");return false;}memcpy(p,input.data()+cursor,n);cursor+=n;return true;}
 void finish(){
@@ -601,7 +602,7 @@ bool jump(uintptr_t where,void* target,size_t length){
 bool install(){
  wchar_t dir[32768],mode[16];
  if(!GetEnvironmentVariableW(L"MYTH_REPLAY_DIR",dir,32768))return true;
- root=dir;GetEnvironmentVariableW(L"MYTH_REPLAY_MODE",mode,16);playback=!wcscmp(mode,L"play");hudOnly=!wcscmp(mode,L"hud");
+ root=dir;GetEnvironmentVariableW(L"MYTH_REPLAY_MODE",mode,16);loadKeyMap();playback=!wcscmp(mode,L"play");hudOnly=!wcscmp(mode,L"hud");
  // The native CRT uses ANSI file names. A launcher-created short ASCII staging
  // directory is required; never silently replace an unrepresentable path.
  BOOL replaced=FALSE;

@@ -62,3 +62,32 @@ python tests/compare_sync_traces.py PORTABLE_SESSION HD_SESSION WIDE_SESSION
 ```
 
 `sync-test` writes scalar diagnostics only. Game/save assets are not distributed.
+
+
+## 0.7.0 static audit of remaining resolution dependence
+
+Goal: find any simulation path that still depends on screen size after 0.6.12.
+The network verifier (`4882B0`, fed at `48760B`) compares the low 4 bits of the
+per-tick RNG copy `A6EA60`, so any extra RNG draw on one client is reported.
+
+- Call-graph closure from every render entry (`46BDA0`, `46BE00`, `46BEA0`,
+  `46C380`, `47FA10`, `480850`, `46C460`) reaches none of the 84 functions that
+  write the RNG seed `A6EA5C`.
+- Of 60 functions reading screen size (`115E2FC/300`), world rect
+  (`CA1060..6C`), camera (`CA98EC/F0`) or engine mode, only `445650`, `46B4D0`,
+  `46B760`, `46BA30` (battle start: camera placed at the start tile) and
+  `46C990` (sim step: RNG advance, then local camera copy) touch the RNG; none
+  draws a value derived from screen geometry.
+- The only screen-rect test reachable from unit logic is `42DD50`, used at
+  `4053A2`, `405428`, `4174A4` for the local player's off-screen attack alert:
+  it writes only the alert location (`42C5E0`), minimap ping and sound queue.
+- `42BC80`, called before positional sounds, tests the local team's fog
+  (`+EAFE`), not the screen.
+- HD-only input helpers (`.`, `` ` ``, Tab selection, >20 unit batching, send
+  FIFO) and the battle-entry surface switch reach no RNG writer.
+
+No further resolution-dependent simulation code was found. Indirect (vtable)
+calls are outside this closure, but the 0.6.12 real-game cross-resolution replay
+run (6,880 frames, equal RNG and state) covers those paths for that match. Two
+live clients on different launcher versions (one older than 0.6.12) still apply
+different rally/production rules and will desync; every player must update.

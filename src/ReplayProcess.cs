@@ -19,10 +19,12 @@ namespace Myth {
    if(IntPtr.Size!=4)throw new InvalidOperationException("Replay helper must be x86.");
    executable=Path.GetFullPath(executable);engine=Path.GetFullPath(engine);session=Path.GetFullPath(session);
    Directory.CreateDirectory(session);
-   Core.SaveMusicVolume(Core.Load().MusicVolume);
+   var settings=Core.Load();Core.SaveMusicVolume(settings.MusicVolume);
    var start=new ProcessStartInfo(executable){WorkingDirectory=Path.GetDirectoryName(executable),UseShellExecute=false};
    start.EnvironmentVariables["MYTH_REPLAY_DIR"]=session;start.EnvironmentVariables["MYTH_REPLAY_MODE"]=mode??(playback?"play":"record");
    start.EnvironmentVariables["MYTH_MUSIC_VOLUME_FILE"]=Core.MusicVolumeFile;
+   string keys="";try{keys=Hotkeys.Engine(settings.KeyBindings);}catch(FormatException ex){Core.Log("단축키 설정 무시: "+ex.Message);}
+   start.EnvironmentVariables["MYTH_KEYMAP"]=keys;start.EnvironmentVariables["MYTH_HERO_BAR"]=settings.HeroBar?"1":"0";
    var process=Process.Start(start);
    // The game is still in its menu; attach before a battle can run.
    try{if(!process.WaitForInputIdle(15000))throw new IOException("게임 초기화 시간을 초과했습니다.");Inject(process,engine);return process;}

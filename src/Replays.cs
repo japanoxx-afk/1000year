@@ -51,7 +51,7 @@ namespace Myth {
   public static ReplayControls Play(string file,string directory,bool fullscreen,bool show=true){
    if(Core.GameRunning(directory))throw new IOException("게임을 종료한 뒤 리플레이를 재생하세요.");
    string session=Session();ReplayInfo info=ReplayArchive.Read(file,session);string engine=Engine();
-   string exe=Core.Prepare(directory,info.Mode,fullscreen,info.PatchSHA256);
+   string exe=Core.Prepare(directory,info.Mode,fullscreen,info.PatchSHA256,Core.Load().Stretch);
    if(Core.Hash(Path.Combine(directory,"MMyth.exe"))!=info.GameSHA256||Core.Hash(exe)!=info.PatchSHA256||info.Rules!=1)throw new IOException("현재 게임·패치·리플레이 규칙이 기록과 다릅니다.");
    var process=ReplayProcess.Start(exe,engine,session,true);
    var controls=new ReplayControls(process,session,info);if(show)controls.Show();return controls;
