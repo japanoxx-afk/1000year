@@ -147,7 +147,7 @@ constexpr uintptr_t soundVisibilitySites[]={0x40338f,0x45fe7d,0x4032d8,0x403860,
 int __fastcall observerSoundVisible(void* self,void*,int x,int y){
  int hidden=((int(__thiscall*)(void*,int,int))0x42bc80)(self,x,y);
  if(!playback||failed)return hidden;
- int radius=mem<int32_t>(0x115e2fc)>=1024?24:17;
+ int radius=mem<int32_t>(0x115e2fc)>640?24:17;
  if(abs((int16_t)x-mem<int32_t>(0xca98ec))>radius||abs((int16_t)y-mem<int32_t>(0xca98f0))>radius)return 1;
  if(hidden)++hiddenAudioEvents;return 0;
 }
@@ -320,7 +320,7 @@ void dumpObserverFrame(){
 }
 #endif
 #include "local_ui.h"
-uint32_t __cdecl observerHud(){serviceBattleMusic();attachLocalInput();ObserverView view;
+uint32_t __cdecl observerHud(){serviceBattleMusic();attachLocalInput();confineCursor();ObserverView view;
 #ifdef MYTH_PERF_TEST
  auto started=counterNow();drawResources();profileRender(1,started);started=counterNow();drawTimer();profileRender(2,started);
 #else
@@ -717,6 +717,6 @@ bool install(){
 }
 BOOL WINAPI DllMain(HINSTANCE module,DWORD reason,LPVOID){
  if(reason==DLL_PROCESS_ATTACH){DisableThreadLibraryCalls(module);if(!install()){rollback();return FALSE;}}
- if(reason==DLL_PROCESS_DETACH&&output)finish();
+ if(reason==DLL_PROCESS_DETACH){releaseCursor();if(output)finish();}
  return TRUE;
 }

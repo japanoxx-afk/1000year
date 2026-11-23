@@ -8,7 +8,7 @@
 // ---- Custom hotkeys ------------------------------------------------------
 // keyMap[physical] = logical virtual key. Identity by default; 0 disables a key.
 uint8_t keyMap[256];
-bool keyMapActive=false,heroBarEnabled=true;
+bool keyMapActive=false,heroBarEnabled=true,clipCursorEnabled=true,cursorClipped=false;
 WNDPROC localPreviousProc=nullptr;HWND localWindow=nullptr;
 bool swallowLeftUp=false;
 
@@ -34,8 +34,25 @@ void loadKeyMap(){
   }
  }
  wchar_t hero[8];if(GetEnvironmentVariableW(L"MYTH_HERO_BAR",hero,8)&&hero[0]==L'0')heroBarEnabled=false;
+ wchar_t clip[8];if(GetEnvironmentVariableW(L"MYTH_CLIP_CURSOR",clip,8)&&clip[0]==L'0')clipCursorEnabled=false;
 }
 bool inBattleInput(){return mem<uint16_t>(0x4dec90)==3&&!mem<uint32_t>(0xb9022c);}
+
+// ---- Cursor confinement --------------------------------------------------
+// During a battle, while the game window is the foreground window, keep the
+// cursor inside its client area so edge scrolling works on every monitor
+// layout. Losing focus (Alt+Tab), minimising or leaving the battle releases it.
+void releaseCursor(){if(cursorClipped){ClipCursor(nullptr);cursorClipped=false;}}
+void confineCursor(){
+ if(playback||!clipCursorEnabled)return;
+ HWND window=mem<HWND>(0x7a2ce0);
+ if(!window||!IsWindow(window)||GetForegroundWindow()!=window||IsIconic(window)||mem<uint16_t>(0x4dec90)!=3){releaseCursor();return;}
+ RECT client;if(!GetClientRect(window,&client))return;
+ POINT a{client.left,client.top},b{client.right,client.bottom};ClientToScreen(window,&a);ClientToScreen(window,&b);
+ RECT area{a.x,a.y,b.x,b.y};if(area.right<=area.left||area.bottom<=area.top)return;
+ RECT current{};GetClipCursor(&current);
+ if(!cursorClipped||!EqualRect(&current,&area)){if(ClipCursor(&area))cursorClipped=true;}
+}
 
 // ---- Hero portrait bar ---------------------------------------------------
 struct HeroCard {RECT box;uint32_t handle;};
@@ -137,6 +154,7 @@ bool clickHero(){
  return false;
 }
 LRESULT CALLBACK localWindowProc(HWND window,UINT message,WPARAM key,LPARAM data){
+ if(cursorClipped&&((message==WM_ACTIVATEAPP&&!key)||message==WM_KILLFOCUS||(message==WM_SIZE&&key==SIZE_MINIMIZED)||(message==WM_MOUSEMOVE&&mem<uint16_t>(0x4dec90)!=3)))releaseCursor();
  if(message==WM_LBUTTONDOWN&&!heroCards.empty()&&inBattleInput()&&clickHero()){swallowLeftUp=true;return 0;}
  if(message==WM_LBUTTONUP&&swallowLeftUp){swallowLeftUp=false;return 0;}
  if(keyMapActive&&key<256&&(message==WM_KEYDOWN||message==WM_SYSKEYDOWN||message==WM_KEYUP||message==WM_SYSKEYUP)){
@@ -158,7 +176,7 @@ LRESULT CALLBACK localWindowProc(HWND window,UINT message,WPARAM key,LPARAM data
 }
 // Subclass once, on the native game thread, after the battle window exists.
 void attachLocalInput(){
- if(playback||localPreviousProc||(!keyMapActive&&!heroBarEnabled))return;
+ if(playback||localPreviousProc||(!keyMapActive&&!heroBarEnabled&&!clipCursorEnabled))return;
  HWND window=mem<HWND>(0x7a2ce0);if(!window||!IsWindow(window))return;
  localPreviousProc=(WNDPROC)SetWindowLongPtrA(window,GWLP_WNDPROC,(LONG_PTR)localWindowProc);
  if(localPreviousProc)localWindow=window;

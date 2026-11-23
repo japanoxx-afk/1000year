@@ -10,7 +10,7 @@ from unicorn.x86_const import *
 source=pathlib.Path(sys.argv[1]).read_bytes()
 assert hashlib.sha256(source).hexdigest()=='1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf'
 results={}
-for mode in ('portable','hd','wide','replay-portable-0.6.11'):
+for mode in ('portable','svga','hd','wide','replay-portable-0.6.11'):
  recipe=json.loads(pathlib.Path('compat/'+mode+'.json').read_text());image=bytearray(source)
  for edit in recipe['Edits']:
   offset=edit['Offset'];before=bytes.fromhex(edit['Before']);after=bytes.fromhex(edit['After'])
@@ -54,9 +54,9 @@ for mode in ('portable','hd','wide','replay-portable-0.6.11'):
    assert run(entry,args,building)==1
    births.append((struct.unpack('<h',u.mem_read(0x209000,2))[0],struct.unpack('<h',u.mem_read(0x209004,2))[0]))
  results[mode]=(rally,births)
-assert results['portable']==results['hd']==results['wide'],results
+assert results['portable']==results['svga']==results['hd']==results['wide'],results
 assert results['portable']!=results['replay-portable-0.6.11'],results
 assert results['portable'][0]==(30,40)
-print('PASS: native rally receiver and all three production paths agree across 640x480, 1024x768 and 1280x720; legacy mismatch reproduced')
+print('PASS: native rally receiver and all three production paths agree across 640x480, 800x600, 1024x768 and 1280x720; legacy mismatch reproduced')
 print('Legacy rally:',results['replay-portable-0.6.11'][0],'; fixed:',results['portable'][0])
 print('Legacy births:',results['replay-portable-0.6.11'][1][:4],'; fixed:',results['portable'][1][:4])

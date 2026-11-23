@@ -5,7 +5,7 @@ import pefile
 from unicorn import Uc,UC_ARCH_X86,UC_MODE_32
 from unicorn.x86_const import *
 name=sys.argv[3] if len(sys.argv)>3 else 'hd'
-W,H=(1280,720) if name=='wide' else (640,480) if name=='portable' else (1024,768)
+W,H=(1280,720) if name=='wide' else (800,600) if name=='svga' else (640,480) if name=='portable' else (1024,768)
 VW=W;DX=W-640;DY=H-480
 r=json.loads(pathlib.Path('compat/'+name+'.json').read_text())
 s=pathlib.Path(sys.argv[1]).read_bytes();assert hashlib.sha256(s).hexdigest()==r['SourceSHA256']

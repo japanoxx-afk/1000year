@@ -52,7 +52,7 @@ namespace Myth {
    using(var stream=File.OpenRead(file))using(var r=new BinaryReader(stream)){
     if(stream.Length>Limit+33L*1024*1024||!r.ReadBytes(8).SequenceEqual(Magic))throw new InvalidDataException("지원하지 않는 리플레이 파일입니다.");
     info=new JavaScriptSerializer().Deserialize<ReplayInfo>(Encoding.UTF8.GetString(ReadBytes(r,65536)));
-    if(info==null||info.Format!=1||info.Rules!=1||info.Mode<0||info.Mode>3||info.TickMilliseconds<10||info.TickMilliseconds>1000||!Digest(info.GameSHA256)||!Digest(info.PatchSHA256)||!Digest(info.EngineSHA256)||!Digest(info.InitialSHA256)||!Digest(info.CommandsSHA256))throw new InvalidDataException("리플레이 호환 정보 오류");
+    if(info==null||info.Format!=1||info.Rules!=1||info.Mode<0||info.Mode>4||info.TickMilliseconds<10||info.TickMilliseconds>1000||!Digest(info.GameSHA256)||!Digest(info.PatchSHA256)||!Digest(info.EngineSHA256)||!Digest(info.InitialSHA256)||!Digest(info.CommandsSHA256))throw new InvalidDataException("리플레이 호환 정보 오류");
     DateTime date;if(!DateTime.TryParse(info.RecordedAt,out date))throw new InvalidDataException("리플레이 날짜 오류");
     initial=ReadBytes(r,32*1024*1024);commands=ReadBytes(r,Limit);
     if(stream.Position!=stream.Length||Core.HashBytes(initial)!=info.InitialSHA256||Core.HashBytes(commands)!=info.CommandsSHA256)throw new InvalidDataException("리플레이 파일이 손상되었습니다.");

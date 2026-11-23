@@ -8,8 +8,10 @@ parser.add_argument('--source',required=True)
 parser.add_argument('--output',default='compat/hd.json')
 parser.add_argument('--exe')
 parser.add_argument('--wide',action='store_true',help='1280x720 internal 16:9 mode')
+parser.add_argument('--svga',action='store_true',help='800x600 internal 4:3 mode')
 args=parser.parse_args()
-W,H=(1280,720) if args.wide else (1024,768)
+assert not(args.wide and args.svga)
+W,H=(1280,720) if args.wide else (800,600) if args.svga else (1024,768)
 # Render terrain beneath the HUD as well: its transparent upper region must
 # expose the world rather than an unpainted legacy 128-pixel sidebar.
 VW=W
