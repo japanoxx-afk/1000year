@@ -85,6 +85,18 @@ namespace Myth {
    File.WriteAllText(dll+".1000year-managed",Hash(dll));File.WriteAllText(ini+".1000year-managed",Hash(ini));
    Log("Prepared mode="+mode+" stretch="+stretch+" exe="+target+" SHA256="+Hash(target));return target;
   }
+  // The map editor is produced from the player's own original MMyth.exe with a
+  // hash-locked recipe; no game executable is distributed with the launcher.
+  public static string PrepareEditor(string directory) {
+   directory=Path.GetFullPath(directory);string source=Path.Combine(directory,"MMyth.exe");
+   if(!File.Exists(source)||!Directory.Exists(Path.Combine(directory,"tile")))throw new IOException("MMyth.exe와 tile 폴더가 있는 게임 폴더를 선택하세요.");
+   var recipe=new JavaScriptSerializer{MaxJsonLength=Int32.MaxValue}.Deserialize<Recipe>(System.Text.Encoding.UTF8.GetString(Resource("Myth.MapEditorRecipe")));
+   string target=Path.Combine(directory,"MapEditor.exe");
+   if(File.Exists(target)&&Hash(target)==recipe.OutputSHA256)return target;
+   byte[] patched=Patch(File.ReadAllBytes(source),recipe);
+   File.WriteAllBytes(target+".partial",patched);if(File.Exists(target))File.Delete(target);File.Move(target+".partial",target);
+   Log("Prepared map editor SHA256="+recipe.OutputSHA256);return target;
+  }
   static void BackupGraphics(string file){if(File.Exists(file+".1000year-original")||File.Exists(file+".1000year-absent"))return;if(File.Exists(file))File.Copy(file,file+".1000year-original");else File.WriteAllText(file+".1000year-absent","");}
   public static void RestoreGraphics(string directory) {
    if(GameRunning(directory))throw new IOException("게임을 종료한 뒤 복원하세요.");

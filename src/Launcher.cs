@@ -15,7 +15,7 @@ namespace Myth {
  public sealed class Launcher:Form {
   static readonly int[] ModeOrder={0,4,1,2,3};
   int SelectedMode{get{return ModeOrder[Math.Max(0,mode.SelectedIndex)];}}
-  Settings settings=Core.Load();TextBox path;ComboBox mode;CheckBox full,stretch,heroBar,clip,auto,record;TrackBar musicVolume;Label musicLevel,status;Button play,update,replays,hotkeys;bool busy;FileSystemWatcher replayWatcher;CancellationTokenSource stop=new CancellationTokenSource();
+  Settings settings=Core.Load();TextBox path;ComboBox mode;CheckBox full,stretch,heroBar,clip,auto,record;TrackBar musicVolume;Label musicLevel,status;Button play,update,replays,hotkeys,editor;bool busy;FileSystemWatcher replayWatcher;CancellationTokenSource stop=new CancellationTokenSource();
   public Launcher() {
    Text="천년의신화 런처 · "+Core.Version;ClientSize=new Size(720,680);MinimumSize=Size;MaximumSize=Size;StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(23,29,35);ForeColor=Color.FromArgb(236,229,214);Font=new Font("맑은 고딕",10);
    Controls.Add(new Label{Text="천년의신화",Font=new Font("맑은 고딕",27,FontStyle.Bold),Location=new Point(30,22),Size=new Size(480,58)});
@@ -37,7 +37,8 @@ namespace Myth {
    var notes=Button("패치노트",512,403,176);notes.Height=52;notes.Click+=(s,e)=>Process.Start(new ProcessStartInfo("https://github.com/japanoxx-afk/1000year/releases"){UseShellExecute=true});
    record=new CheckBox{Text="경기 리플레이 기록",Location=new Point(34,472),Size=new Size(200,30),Checked=settings.RecordReplay};Controls.Add(record);
    hotkeys=Button("단축키 설정",250,469,176);hotkeys.Click+=(s,e)=>{using(var dialog=new HotkeyDialog(settings.KeyBindings)){if(dialog.ShowDialog(this)==DialogResult.OK){settings.KeyBindings=dialog.Bindings;Save();Say(String.IsNullOrEmpty(settings.KeyBindings)?"기본 단축키를 사용합니다.":"단축키를 저장했습니다. 다음 게임 실행부터 적용됩니다.");}}};
-   replays=Button("리플레이 목록",438,469,250);replays.Click+=(s,e)=>new ReplayLibrary(path.Text,full.Checked).Show(this);
+   replays=Button("리플레이 목록",438,469,124);
+   editor=Button("맵 에디터",568,469,120);editor.Click+=(s,e)=>OpenEditor();replays.Click+=(s,e)=>new ReplayLibrary(path.Text,full.Checked).Show(this);
    Controls.Add(new Label{Text="전장 배경음악 음량",Location=new Point(34,525),Size=new Size(180,28)});
    musicVolume=new TrackBar{Minimum=0,Maximum=100,TickFrequency=10,SmallChange=5,LargeChange=10,Value=Math.Max(0,Math.Min(100,settings.MusicVolume)),Location=new Point(210,519),Size=new Size(400,45),BackColor=BackColor,AccessibleName="전장 배경음악 음량"};Controls.Add(musicVolume);
    musicLevel=new Label{Text=musicVolume.Value+"%",Location=new Point(625,525),Size=new Size(64,28)};Controls.Add(musicLevel);
@@ -50,8 +51,9 @@ namespace Myth {
   Button Button(string text,int x,int y,int width) {var b=new Button{Text=text,Location=new Point(x,y),Size=new Size(width,34),FlatStyle=FlatStyle.Flat,BackColor=Color.FromArgb(44,54,64),ForeColor=ForeColor};Controls.Add(b);return b;}
   void Save(){settings.GameDirectory=path.Text;settings.Mode=SelectedMode;settings.Fullscreen=full.Checked;settings.Stretch=stretch.Checked;settings.HeroBar=heroBar.Checked;settings.ClipCursor=clip.Checked;settings.AutoUpdate=auto.Checked;settings.RecordReplay=record.Checked;settings.MusicVolume=musicVolume.Value;try{Core.Save(settings);}catch(Exception ex){Core.Log(ex.ToString());}}
   void Say(string s){status.Text=s;Core.Log(s);}
-  void SetBusy(bool b){busy=b;play.Enabled=update.Enabled=replays.Enabled=hotkeys.Enabled=!b;path.Enabled=mode.Enabled=full.Enabled=stretch.Enabled=heroBar.Enabled=clip.Enabled=record.Enabled=!b;}
+  void SetBusy(bool b){busy=b;play.Enabled=update.Enabled=replays.Enabled=hotkeys.Enabled=editor.Enabled=!b;path.Enabled=mode.Enabled=full.Enabled=stretch.Enabled=heroBar.Enabled=clip.Enabled=record.Enabled=!b;}
   void Launch(){try{Save();if(Core.GameRunning(path.Text))throw new IOException("선택한 폴더의 게임이 이미 실행 중입니다.");string exe=Core.Prepare(path.Text,SelectedMode,full.Checked,null,stretch.Checked);if(record.Checked)Replays.Record(exe,SelectedMode,message=>{Core.Log(message);if(!IsDisposed&&IsHandleCreated)BeginInvoke((Action)(()=>Say(message)));});else Replays.PlayGame(exe);Say(record.Checked?"게임을 실행했습니다. 게임 종료 시 첫 경기의 리플레이를 저장합니다.":"게임을 실행했습니다. 설정은 다음 실행부터 적용됩니다.");}catch(Exception ex){Say("실행 실패: "+ex.Message);MessageBox.Show(this,ex.Message,"게임 실행",MessageBoxButtons.OK,MessageBoxIcon.Warning);}}
+  void OpenEditor(){try{Save();string exe=Core.PrepareEditor(path.Text);Process.Start(new ProcessStartInfo(exe){WorkingDirectory=Path.GetDirectoryName(exe),UseShellExecute=false});Say("맵 에디터를 실행했습니다.");}catch(Exception ex){Say("맵 에디터 실행 실패: "+ex.Message);MessageBox.Show(this,ex.Message,"맵 에디터",MessageBoxButtons.OK,MessageBoxIcon.Warning);}}
   async Task CheckUpdate(){if(busy)return;SetBusy(true);Save();try{if(Core.GameRunning(path.Text)){Say("게임 종료 후 업데이트를 확인하세요.");return;}Say("최신 버전을 확인하고 있습니다…");ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;using(var client=new HttpClient()){client.DefaultRequestHeaders.UserAgent.ParseAdd("1000year-Launcher/"+Core.Version);string session=Path.Combine(Core.UserHome,"Updates",Guid.NewGuid().ToString("N"));string package=await Updates.Prepare(client,Core.Version,session,r=>true,Say,stop.Token);if(package!=null){await Updates.StartInstaller(package,Core.Home,Path.GetFileName(Application.ExecutablePath),Process.GetCurrentProcess().Id,stop.Token);SetBusy(false);Application.Exit();}}}catch(Exception ex){Say("업데이트 확인 실패 · 게임은 실행할 수 있습니다. "+ex.Message);}finally{SetBusy(false);}}
  }
 }
