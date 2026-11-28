@@ -105,6 +105,19 @@ def install(g):
  test eax,0x2000; jnz living; and eax,0x4001; cmp eax,0x4001; jne other;
  living: mov eax,1; jmp 0x458ddd;
  other: xor eax,eax; jmp 0x458ddd''')
+ # Shift-queued construction (local input only; the queue itself is native).
+ # Ground commands already queue with Ctrl (0046EC3A: packet flag 0 appends to
+ # the unit's 10-entry order queue, 00464400). Shift now queues as well, and a
+ # Shift placement of a building (command 0x23) keeps placement mode active so
+ # wall segments can be placed one after another. Releasing Shift, Esc or a
+ # right click ends placement exactly as before.
+ assert bytes(g['b'][g['p'].get_offset_from_rva(0x46ec3a-0x400000):][:8])==bytes.fromhex('393d08d9ce00751e')
+ g['hook'](0x46ec3a,8,'''cmp dword ptr [0xced908],1; je queued;
+ cmp dword ptr [0xced910],1; je queued; jmp 0x46ec60; queued: jmp 0x46ec42''')
+ assert bytes(g['b'][g['p'].get_offset_from_rva(0x46ed18-0x400000):][:7])==bytes.fromhex('66891d82efa600')
+ g['hook'](0x46ed18,7,'''cmp dword ptr [0xced910],1; jne reset;
+ cmp word ptr [0xa6ef82],0x23; jne reset; jmp 0x46ed42;
+ reset: mov word ptr [0xa6ef82],bx; jmp 0x46ed1f''')
  # Original-resolution clients need identical simulation/input rules, without
  # importing HD resource layout, selection widgets or a display-mode switch.
  if g.get('rules_only'):return dict(rally=rally,exit_score=exit_score)

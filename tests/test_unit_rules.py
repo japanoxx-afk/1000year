@@ -41,3 +41,30 @@ for m in ('portable','svga','hd','wide'):
  for name,flags in cases.items():assert flame(image,flags)==want[name],(m,name)
 for name,flags in cases.items():assert flame(source,flags)==(1 if flags&0x2000 else 0),name
 print('PASS Mireuk flame field: living + mobile siege/ships strike in every resolution; buildings unchanged; original accepted living only')
+# Shift-queued construction: execute the real ground-command tail (0046EC3A ->
+# 0046ED42) with the packet builder stubbed, for each modifier and command.
+def ground(image,ctrl,shift,command):
+ p=pefile.PE(data=image);u=Uc(UC_ARCH_X86,UC_MODE_32)
+ from unicorn import UC_HOOK_CODE
+ from unicorn.x86_const import UC_X86_REG_EBX,UC_X86_REG_EDI
+ u.mem_map(0x400000,(p.OPTIONAL_HEADER.SizeOfImage+0xfff)&~0xfff);u.mem_write(0x400000,p.get_memory_mapped_image())
+ u.mem_map(0x200000,0x100000);u.mem_write(0x435040,b'\xc3')
+ put=lambda a,v:u.mem_write(a,struct.pack('<I',v))
+ put(0xced908,ctrl);put(0xced910,shift);u.mem_write(0xa6ef82,struct.pack('<H',command));put(0xa79504,30);put(0xa79508,40);put(0xa7950c,25)
+ u.reg_write(UC_X86_REG_EBX,0);u.reg_write(UC_X86_REG_EDI,1);u.reg_write(UC_X86_REG_ESP,0x2e0000)
+ sent=[]
+ def h(uc,a,s,d):
+  if a==0x435040:
+   sp=uc.reg_read(UC_X86_REG_ESP);sent.append(struct.unpack('<6I',uc.mem_read(sp,24)))
+ u.hook_add(UC_HOOK_CODE,h,begin=0x435040,end=0x435040)
+ u.emu_start(0x46ec3a,0x46ed42,count=500)
+ kind,flag,xy,param=sent[0][2]&0xffff,sent[0][5]&0xff,sent[0][3],sent[0][4]
+ return kind,flag,xy,param,struct.unpack('<H',u.mem_read(0xa6ef82,2))[0]
+for m in ('portable','svga','hd','wide'):
+ image=build(m)
+ assert ground(image,0,0,0x23)==(0x23,1,30|40<<16,25,0)      # plain click: immediate, leave placement
+ assert ground(image,1,0,0x23)==(0x23,0,30|40<<16,25,0)      # Ctrl (native): queued, leave placement
+ assert ground(image,0,1,0x23)==(0x23,0,30|40<<16,25,0x23)   # Shift: queued, stay in placement
+ assert ground(image,0,1,3)==(3,0,30|40<<16,25,0)            # Shift move: queued waypoint, mode ends
+assert ground(source,0,1,0x23)==(0x23,1,30|40<<16,25,0) and ground(source,1,0,0x23)[1]==0
+print('PASS Shift queues construction and keeps placement mode; plain/Ctrl clicks unchanged; original ignored Shift')
