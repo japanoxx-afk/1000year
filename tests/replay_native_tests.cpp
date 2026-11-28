@@ -140,6 +140,17 @@ int main(){
  {auto q=queuedBuildings();size_t mine=0;for(auto& b:q)if(b.type==5&&b.y==40&&(b.x==30||b.x==32))++mine;assert(mine==2);
   mem<int8_t>(worker+0x76)=1;for(auto& b:queuedBuildings())assert(!(b.type==5&&b.y==40&&(b.x==30||b.x==32)));mem<int8_t>(worker+0x76)=0;}
  memset((void*)worker,0,2308);mem<uint16_t>(0xa79620+40*2)=0;
- std::cout<<"PASS: asynchronous progress status never overwrites COMPLETE; local hotkey translation/release/chat and menu passthrough, polled keys unmapped, hero ownership and card hit testing, queued building previews (mine only, buildings only)\n";
+ // Wall drag line: 1x1 segments fill every tile; 2x2 segments space by two;
+ // tiles already placed in this drag are skipped; diagonal lines stay connected.
+ {auto a=wallSteps({10,10},{14,10},1,1,{{10,10}});assert(a.size()==4&&a[0].x==11&&a[3].x==14&&a[3].y==10);
+  auto b=wallSteps({10,10},{16,10},2,2,{{10,10}});assert(b.size()==3&&b[0].x==12&&b[1].x==14&&b[2].x==16);
+  auto c=wallSteps({10,10},{12,10},1,1,{{10,10},{11,10}});assert(c.size()==1&&c[0].x==12);
+  auto d=wallSteps({0,0},{3,3},1,1,{{0,0}});assert(d.size()==3&&d[2].x==3&&d[2].y==3);
+  auto e=wallSteps({5,5},{5,5},1,1,{{5,5}});assert(e.empty());}
+ // Drag starts only in building placement mode.
+ mem<uint16_t>(0xa6ef82)=180;mem<uint16_t>(0xa6eba0)=5;mem<int16_t>(0x7a0fa8)=20;mem<int16_t>(0x7a0faa)=21;
+ beginWallDrag();assert(wallDrag&&wallPlaced.size()==1&&wallLast.x==20&&wallLast.y==21);
+ mem<uint16_t>(0xa6ef82)=3;beginWallDrag();assert(!wallDrag);mem<uint16_t>(0xa6ef82)=0;mem<uint16_t>(0xa6eba0)=0;
+ std::cout<<"PASS: asynchronous progress status never overwrites COMPLETE; local hotkey translation/release/chat and menu passthrough, polled keys unmapped, hero ownership and card hit testing, queued building previews (mine only, buildings only), Shift-drag wall line spacing and start conditions\n";
  std::cout<<"PASS: hero arrival visuals/chime suppression, replay/live HUD timer, raw/derived fog restoration, enemy/dead/embarked visibility, indexed panel stability/clean restoration across pitch changes, positional combat audio, resource rows, x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
 }
