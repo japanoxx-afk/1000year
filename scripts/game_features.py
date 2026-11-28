@@ -8,6 +8,12 @@ def install(g):
  # Fire arrow (attack 17): class 3 siege engines/ships share the native
  # double-attack branch already used for classes 5 and 6.
  g['patch'](0x401468,asm(0x401468,'je 0x4013cf'),'fire arrows double against siege engines and ships')
+ # Watchtower supply (전비) 5 -> 15. The unit-type initializer passes supply as
+ # the 5th argument of 00425140 (record +0x10); the native affordability check
+ # (current + cost <= limit) and production completion read that field.
+ for site,tower in ((0x42aaf6,'Baekje watchtower 25100'),(0x429a7f,'Goguryeo watchtower 25700')):
+  assert bytes(g['b'][g['p'].get_offset_from_rva(site-0x400000):][:2])==b'\x6a\x05',tower
+  g['patch'](site,b'\x6a\x0f',tower+' supply 15')
  # The input cursor must offer a rally command before the simulation receiver
  # can process it. Buildings previously offered no ground command at all.
  hook(0x46ccf0,8,'''push edx; push ecx;

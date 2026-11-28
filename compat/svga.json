@@ -31,7 +31,7 @@
     }
   },
   "SourceSHA256": "1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf",
-  "OutputSHA256": "029f0238c4603b7ed7f62105ea572a9117b4e7334fb4793270220fdbf416d833",
+  "OutputSHA256": "0b6bd531a6113bc89dd1c7e8731f754bdbe6978d4d24529ef90f7ad733412433",
   "Edits": [
     {
       "Offset": 246,
@@ -260,6 +260,18 @@
       "Before": "96",
       "After": "e6",
       "Note": "Verified HD patch offset 0x1e955"
+    },
+    {
+      "Offset": 170624,
+      "Before": "05",
+      "After": "0f",
+      "Note": "Verified HD patch offset 0x29a80"
+    },
+    {
+      "Offset": 174839,
+      "Before": "05",
+      "After": "0f",
+      "Note": "Verified HD patch offset 0x2aaf7"
     },
     {
       "Offset": 181392,

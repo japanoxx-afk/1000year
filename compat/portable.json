@@ -4,7 +4,7 @@
     "exit_score": 18677936
   },
   "SourceSHA256": "1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf",
-  "OutputSHA256": "9b7d189c0276cddc245c09457ef10a2937ebab52ed6d1bdac0dc7f14049e9333",
+  "OutputSHA256": "402025fbd071fec4cb6de44d1ddece674c81e10736e90652fe0691fa67f3d925",
   "Edits": [
     {
       "Offset": 574848,
@@ -23,6 +23,18 @@
       "Before": "0f84bd000000",
       "After": "0f8461ffffff",
       "Note": "fire arrows double against siege engines and ships"
+    },
+    {
+      "Offset": 174838,
+      "Before": "6a05",
+      "After": "6a0f",
+      "Note": "Baekje watchtower 25100 supply 15"
+    },
+    {
+      "Offset": 170623,
+      "Before": "6a05",
+      "After": "6a0f",
+      "Note": "Goguryeo watchtower 25700 supply 15"
     },
     {
       "Offset": 445680,
