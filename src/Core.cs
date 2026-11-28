@@ -46,7 +46,7 @@ namespace Myth {
   }
  }
  public static class Core {
-  public const string Version="0.7.2";
+  public const string Version="0.7.3";
   public static string Home=AppDomain.CurrentDomain.BaseDirectory;
   public static string UserHome=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"1000year");
   public static string Hash(string path) {using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
