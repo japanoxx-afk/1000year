@@ -8,6 +8,12 @@ def install(g):
  # Fire arrow (attack 17): class 3 siege engines/ships share the native
  # double-attack branch already used for classes 5 and 6.
  g['patch'](0x401468,asm(0x401468,'je 0x4013cf'),'fire arrows double against siege engines and ships')
+ # Watchtower supply (전비) 5 -> 15. The unit-type initializer passes supply as
+ # the 5th argument of 00425140 (record +0x10); the native affordability check
+ # (current + cost <= limit) and production completion read that field.
+ for site,tower in ((0x42aaf6,'Baekje watchtower 25100'),(0x429a7f,'Goguryeo watchtower 25700')):
+  assert bytes(g['b'][g['p'].get_offset_from_rva(site-0x400000):][:2])==b'\x6a\x05',tower
+  g['patch'](site,b'\x6a\x0f',tower+' supply 15')
  # The input cursor must offer a rally command before the simulation receiver
  # can process it. Buildings previously offered no ground command at all.
  hook(0x46ccf0,8,'''push edx; push ecx;
@@ -90,6 +96,68 @@ def install(g):
  add esp,24; ret;
  move: popad; jmp 0x4358a0''')
  hook(0x40e627,5,f'call {rally}; jmp 0x40e62c')
+ # Mireuk flame field (projectile type 28, 00458C89): each enemy found in the
+ # 7x7 field can call a strike (attack 7, radius 2). The native test accepted
+ # only living units (+1D8 & 0x2000). Also accept mobile mechanical units:
+ # siege engines and ships carry 0x4000 together with the mobile bit 0x1.
+ # Buildings (0x4000 without 0x1) keep the original behaviour.
+ g['hook'](0x458dcd,16,'''movsx eax,di; imul eax,eax,2308; mov eax,dword ptr [eax+0x7ca8c0];
+ test eax,0x2000; jnz living; and eax,0x4001; cmp eax,0x4001; jne other;
+ living: mov eax,1; jmp 0x458ddd;
+ other: xor eax,eax; jmp 0x458ddd''')
+ # Shift-queued construction (local input only; the queue itself is native).
+ # Ground commands already queue with Ctrl (0046EC3A: packet flag 0 appends to
+ # the unit's 10-entry order queue, 00464400). Shift now queues as well, and a
+ # Shift placement of a building (a command whose table type, +4, is a
+ # building: unit-type flags 0xB60D5C bit 2) keeps placement mode active so
+ # wall segments can be placed one after another. A6EF80 (waiting for a target
+ # click) must be set again: the sender at 0046E860 runs every frame while it is 0. Releasing Shift, Esc or a
+ # right click ends placement exactly as before.
+ assert bytes(g['b'][g['p'].get_offset_from_rva(0x46ec3a-0x400000):][:8])==bytes.fromhex('393d08d9ce00751e')
+ g['hook'](0x46ec3a,8,'''cmp dword ptr [0xced908],1; je queued;
+ cmp dword ptr [0xced910],1; je queued; jmp 0x46ec60; queued: jmp 0x46ec42''')
+ assert bytes(g['b'][g['p'].get_offset_from_rva(0x46ed18-0x400000):][:7])==bytes.fromhex('66891d82efa600')
+ g['hook'](0x46ed18,7,'''cmp dword ptr [0xced910],1; jne reset;
+ movzx eax,word ptr [0xa6ef82]; dec eax; cmp eax,362; ja reset;
+ inc eax; lea eax,[eax+eax*2]; movsx eax,word ptr [eax*8+0xb8dd84];
+ cmp eax,0x4d; je reset; test eax,eax; jle reset; cmp eax,200; jge reset;
+ imul eax,eax,896; test byte ptr [eax+0xb60d5c],2; jz reset;
+ mov byte ptr [0xa6ef80],1; jmp 0x46ed42;
+ reset: mov word ptr [0xa6ef82],bx; jmp 0x46ed1f''')
+ # "magic" cheat (also "1_magic", any letter case, surrounding spaces ignored): mana is refilled when switched
+ # on and is not consumed. Like the native cheats it travels as a type-2 command so every client and the replay
+ # toggle it on the same tick: native cheat command 0x15E carries a marker in its unused tile field.
+ MARK=0x4947414d;magic=g['va']+0x2620
+ g['hook'](0x41a6a0,8,f'''push ebx; push ebp; push esi; push edi; mov edi,dword ptr [esp+0x14];
+ pushad; mov esi,edi;
+ spaces: cmp byte ptr [esi],0x20; jne prefix; inc esi; jmp spaces;
+ prefix: cmp word ptr [esi],0x5f31; jne letters; add esi,2;
+ letters: mov eax,dword ptr [esi]; or eax,0x20202020; cmp eax,0x6967616d; jne no;
+ mov al,byte ptr [esi+4]; or al,0x20; cmp al,0x63; jne no; add esi,5;
+ rest: mov al,byte ptr [esi]; inc esi; cmp al,0x20; je rest; test al,al; jnz no;
+ push 1; push 0; push {MARK}; push 0x15e; movsx eax,word ptr [0xcbdc3c]; push eax; call 0x435040; add esp,20;
+ no: popad; jmp 0x41a6a8''')
+ g['hook'](0x41aa00,8,f'''cmp word ptr [esp+4],0x15e; jne native; cmp dword ptr [esp+8],{MARK}; jne native;
+ xor byte ptr [{magic}],1; jz done;
+ mov eax,0x7ca6e8; mov edx,1200;
+ fill: mov ecx,dword ptr [eax+0x10c]; test ecx,ecx; jle skip; mov dword ptr [eax+0xa0],ecx;
+ skip: add eax,2308; dec edx; jnz fill;
+ done: ret 0x68;
+ native: sub esp,8; movsx eax,word ptr [esp+0xc]; jmp 0x41aa08''')
+ # Battle initialisation resets the native cheat object; reset ours with it.
+ g['hook'](0x41a3e0,8,f'mov byte ptr [{magic}],0; xor eax,eax; mov dword ptr [ecx],eax; mov word ptr [ecx+4],ax; jmp 0x41a3e8')
+ # Every mana write through the native setter keeps mana at its maximum.
+ g['hook'](0x416e10,7,f'''cmp byte ptr [{magic}],0; je native;
+ mov eax,dword ptr [ecx+0x10c]; mov dword ptr [ecx+0xa0],eax; xor ax,ax; ret 4;
+ native: mov eax,dword ptr [esp+4]; test ax,ax; jmp 0x416e17''')
+ # A few spells subtract their cost without the setter. The per-unit mana regeneration step runs every
+ # simulation tick, so it restores those too (ESI=unit).
+ assert bytes(g['b'][g['p'].get_offset_from_rva(0x19632):][:10])==bytes.fromhex('8bbea00000008b442424')
+ g['hook'](0x419632,10,f'''mov edi,dword ptr [esi+0xa0]; mov eax,dword ptr [esp+0x24];
+ cmp byte ptr [{magic}],0; je back; push eax; mov eax,dword ptr [esi+0x10c];
+ cmp edi,eax; jge full; mov dword ptr [esi+0xa0],eax; mov edi,eax;
+ full: pop eax;
+ back: jmp 0x41963c''')
  # Original-resolution clients need identical simulation/input rules, without
  # importing HD resource layout, selection widgets or a display-mode switch.
  if g.get('rules_only'):return dict(rally=rally,exit_score=exit_score)

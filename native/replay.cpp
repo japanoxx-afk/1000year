@@ -320,11 +320,11 @@ void dumpObserverFrame(){
 }
 #endif
 #include "local_ui.h"
-uint32_t __cdecl observerHud(){serviceBattleMusic();attachLocalInput();confineCursor();ObserverView view;
+uint32_t __cdecl observerHud(){serviceBattleMusic();attachLocalInput();confineCursor();updateWallDrag();logSpell();ObserverView view;
 #ifdef MYTH_PERF_TEST
  auto started=counterNow();drawResources();profileRender(1,started);started=counterNow();drawTimer();profileRender(2,started);
 #else
- drawResources();drawTimer();drawHeroes();
+ drawQueuedBuildings();drawResources();drawTimer();drawHeroes();
 #endif
 #if defined(MYTH_OBSERVER_CAMERA_TEST) || defined(MYTH_HUD_TEST)
  dumpObserverFrame();
@@ -687,8 +687,11 @@ bool install(){
   if(memcmp((void*)0x433560,"\x66\x8b\x15\xa6\x72\x66\x00",7)||memcmp((void*)0x41fb50,"\x81\xec\xb0\x00\x00\x00",6)||memcmp((void*)0x431330,"\x81\xec\x88\x00\x00\x00",6))return false;
   // The HD terrain traversal was widened, but the separate ground-unit pass
   // retained the original +/-13 tiles. Match the enlarged terrain traversal.
-  for(uintptr_t address:{0x480c9c,0x480cad,0x480cc5,0x480cc9}){
-   if(mem<uint8_t>(address)!=13)return false;uint8_t radius=24;if(!patch(address,&radius,1))return false;
+  // Recipes from 0.7.2 on already carry 24; older replay recipes still have 13.
+  // The loop-continuation bounds (48104D/48106A) belong to the same traversal.
+  for(uintptr_t address:{0x480c9c,0x480cad,0x480cc5,0x480cc9,0x48104d,0x48106a}){
+   uint8_t now=mem<uint8_t>(address);if(now==24)continue;
+   if(now!=13)return false;uint8_t radius=24;if(!patch(address,&radius,1))return false;
   }
   // Each site is a fog query whose branch bypasses only a positional sound.
   for(uintptr_t site:soundVisibilitySites){if(mem<uint8_t>(site)!=0xe8||site+5+mem<int32_t>(site+1)!=0x42bc80)return false;uint8_t soundCall[5]={0xe8};mem<int32_t>((uintptr_t)soundCall+1)=(int32_t)((uintptr_t)observerSoundVisible-site-5);if(!patch(site,soundCall,5))return false;}

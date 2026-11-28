@@ -18,7 +18,7 @@ jobs:
         with:
           name: MythLauncher
           path: |
-            dist/MythLauncher.exe
+            dist/MMyth_launcher_*.exe
             dist/MythLauncher.zip
             dist/MythLauncher.zip.sha256
       - name: Publish tagged release
@@ -29,5 +29,19 @@ jobs:
         run: |
           $version=[regex]::Match((Get-Content src/Core.cs -Raw),'Version="([^"]+)"').Groups[1].Value
           if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag/source version mismatch' }
-          gh release create $env:GITHUB_REF_NAME dist/MythLauncher.exe dist/MythLauncher.zip dist/MythLauncher.zip.sha256 --title "1000year Launcher $version" --notes-file PATCHNOTES.md --verify-tag
+          gh release create $env:GITHUB_REF_NAME "dist/MMyth_launcher_$version.exe" dist/MythLauncher.zip dist/MythLauncher.zip.sha256 --title "1000year Launcher $version" --notes-file PATCHNOTES.md --verify-tag
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
+      - name: Attach test build to a private draft release
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Drafts are visible to repository collaborators only, create no tag,
+          # and are ignored by the launcher's updater (releases/latest).
+          $version=[regex]::Match((Get-Content src/Core.cs -Raw),'Version="([^"]+)"').Groups[1].Value
+          $old=gh api "repos/$env:GITHUB_REPOSITORY/releases" --jq '.[] | select(.draft and (.name | startswith("TEST BUILD"))) | .id'
+          foreach ($id in $old) { if ($id) { gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/releases/$id" | Out-Null } }
+          $sha=$env:GITHUB_SHA.Substring(0,7)
+          gh release create "test-$sha" "dist/MMyth_launcher_$version.exe" --draft --target $env:GITHUB_SHA --title "TEST BUILD $version $sha" --notes "Test build. Not a release."
+          if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed' }

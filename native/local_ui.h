@@ -54,6 +54,119 @@ void confineCursor(){
  if(!cursorClipped||!EqualRect(&current,&area)){if(ClipCursor(&area))cursorClipped=true;}
 }
 
+// ---- Queued construction previews ---------------------------------------
+// Each unit keeps up to 10 queued orders (+3A0 count, 12-byte entries at +3A4:
+// command word, flags, tile x|y<<16, parameter). For my units' queued commands
+// whose command-table type (+4) is a building, draw the game's own placement
+// preview (00483080, the routine used under the cursor) at the queued tile.
+struct QueuedBuilding {int type,x,y;};
+bool showQueuedBuildings=true;
+std::vector<QueuedBuilding> queuedBuildings(){
+ std::vector<QueuedBuilding> result;int me=mem<int32_t>(0xcbdc3c);
+ for(unsigned id=1;id<1200;++id){
+  if(!mem<uint16_t>(0xa79620+id*2))continue;uintptr_t u=0x7ca6e8+id*2308;
+  if(mem<int32_t>(u+0x9c)<=0||(int)mem<int8_t>(u+0x76)!=me)continue;
+  int count=mem<int16_t>(u+0x3a0);if(count<=0||count>10)continue;
+  for(int i=0;i<count;++i){
+   uintptr_t e=u+0x3a4+i*12;unsigned kind=mem<uint16_t>(e);if(kind<1||kind>363||kind==0x4d)continue;
+   int type=mem<int16_t>(0xb8dd80+kind*24+4);if(type<1||type>=200||!(mem<uint8_t>(0xb60d5c+type*896)&2))continue;
+   uint32_t tile=mem<uint32_t>(e+4);result.push_back({type,(int16_t)(tile&0xffff),(int16_t)(tile>>16)});
+  }
+ }
+ return result;
+}
+void drawQueuedBuildings(){
+ if(playback||!showQueuedBuildings||failed||mem<uint16_t>(0x4dec90)!=3||mem<int32_t>(0x115e304)!=8)return;
+ void* surface=mem<void*>(0x65181c);if(!surface)return;
+ auto queued=queuedBuildings();if(queued.empty())return;
+ if(((int(__thiscall*)(void*,void*))0x4af970)((void*)0x115e2f8,surface)!=1)return;
+ for(const auto& q:queued)((void(__thiscall*)(void*,int,int,int,int,int))0x483080)((void*)0xca5598,q.type,q.x,q.y,1,0);
+ ((int(__thiscall*)(void*,void*))0x4afb30)((void*)0x115e2f8,surface);
+}
+
+// ---- Shift + drag wall placement ----------------------------------------
+// While Shift and the left button are held in building placement, follow the
+// cursor tile and queue one more native build command for every new tile that
+// does not overlap a segment already placed in this drag and that the game's
+// own placement test (0042D690) accepts. Commands go through the native packet
+// builder (00435040) with the queue flag, exactly as a Shift click does.
+struct Tile {int x,y;};
+bool wallDrag=false;Tile wallLast{};std::vector<Tile> wallPlaced;
+constexpr size_t wallLimit=10;constexpr int wallPerFrame=3;
+int placementType(){
+ unsigned kind=mem<uint16_t>(0xa6ef82);if(kind<1||kind>363||kind==0x4d||!mem<uint16_t>(0xa6eba0))return 0;
+ int type=mem<int16_t>(0xb8dd80+kind*24+4);
+ return type>0&&type<200&&(mem<uint8_t>(0xb60d5c+type*896)&2)?type:0;
+}
+// Tiles from 'from' (exclusive) to 'to' along a straight line, skipping tiles
+// that overlap a w x h footprint already placed.
+std::vector<Tile> wallSteps(Tile from,Tile to,int w,int h,const std::vector<Tile>& placed){
+ std::vector<Tile> out;int dx=abs(to.x-from.x),dy=-abs(to.y-from.y),sx=from.x<to.x?1:-1,sy=from.y<to.y?1:-1,err=dx+dy;Tile p=from;
+ std::vector<Tile> taken=placed;if(w<1)w=1;if(h<1)h=1;
+ while(p.x!=to.x||p.y!=to.y){
+  int e2=2*err;if(e2>=dy){err+=dy;p.x+=sx;}if(e2<=dx){err+=dx;p.y+=sy;}
+  bool overlap=false;for(const auto& q:taken)if(abs(p.x-q.x)<w&&abs(p.y-q.y)<h){overlap=true;break;}
+  if(!overlap){out.push_back(p);taken.push_back(p);}
+ }
+ return out;
+}
+// The chain holds every segment of this drag. All but the last are sent; the
+// last one stays pending because the native click handler sends the tile under
+// the cursor itself when the button is released (no duplicates).
+size_t wallSent=0;
+bool wallValid(const Tile& t,int type){return ((int(__thiscall*)(void*,int,int,int,int))0x42d690)((void*)0xca5598,t.x,t.y,type,mem<int32_t>(0xa6eba2))==1;}
+void wallSend(const Tile& t,int type){
+ if(!wallValid(t,type))return;
+ uint32_t tile=(uint32_t)(uint16_t)t.x|((uint32_t)(uint16_t)t.y<<16);
+ ((int(__cdecl*)(int,int,int,int,int))0x435040)(mem<int16_t>(0xcbdc3c),mem<uint16_t>(0xa6ef82),tile,0,0);
+}
+void wallFlush(int limit){
+ int type=placementType();if(!type){wallSent=wallPlaced.size();return;}
+ while(wallSent+1<wallPlaced.size()&&limit-->0)wallSend(wallPlaced[wallSent++],type);
+}
+void beginWallDrag(){
+ wallDrag=placementType()!=0&&mem<uint8_t>(0xa6ef80)==1;wallPlaced.clear();wallSent=0;
+ if(wallDrag){wallLast={mem<int16_t>(0x7a0fa8),mem<int16_t>(0x7a0faa)};if(wallLast.x<0||wallLast.y<0)wallDrag=false;else wallPlaced.push_back(wallLast);}
+}
+void endWallDrag(){if(wallDrag){wallFlush(wallLimit);
+  // The released tile is sent natively only when it is the pending one.
+  Tile cursor{mem<int16_t>(0x7a0fa8),mem<int16_t>(0x7a0faa)};int type=placementType();
+  if(type&&!wallPlaced.empty()&&(wallPlaced.back().x!=cursor.x||wallPlaced.back().y!=cursor.y)&&wallPlaced.size()>1)wallSend(wallPlaced.back(),type);
+ }wallDrag=false;}
+void updateWallDrag(){
+ if(!wallDrag)return;
+ int type=placementType();
+ if(playback||!type||!inBattleInput()||mem<int32_t>(0xced910)!=1){wallDrag=false;return;}
+ Tile cursor{mem<int16_t>(0x7a0fa8),mem<int16_t>(0x7a0faa)};
+ if(cursor.x>=0&&cursor.y>=0&&wallPlaced.size()<wallLimit&&(cursor.x!=wallLast.x||cursor.y!=wallLast.y)){
+  int w=mem<int16_t>(0xb60d26+type*896),h=mem<int16_t>(0xb60d28+type*896);
+  for(const Tile& t:wallSteps(wallPlaced.back(),cursor,w,h,wallPlaced)){if(wallPlaced.size()>=wallLimit)break;wallPlaced.push_back(t);}
+  wallLast=cursor;
+ }
+ wallFlush(wallPerFrame);
+}
+
+bool heroUnit(unsigned id);
+// ---- Spell diagnostics ---------------------------------------------------
+// After the local player arms a hero spell (targeting mode with command 49),
+// record my heroes' mana and order state for a few seconds in the session
+// folder. Read-only; helps explain a spell that did not start.
+void logSpell(){
+ static uint32_t until=0,lastTick=0xffffffff,lines=0;
+ if(playback||mem<uint16_t>(0x4dec90)!=3)return;uint32_t tick=mem<uint32_t>(0xa6ea50);
+ // The "magic" cheat flag lives in the patch section; note every toggle.
+ static int magicKnown=-1;static uint8_t magicLast=0;
+ if(magicKnown<0){MEMORY_BASIC_INFORMATION m{};magicKnown=VirtualQuery((void*)0x11d2620,&m,sizeof m)&&m.State==MEM_COMMIT&&!(m.Protect&(PAGE_NOACCESS|PAGE_GUARD));}
+ if(magicKnown>0&&mem<uint8_t>(0x11d2620)!=magicLast){magicLast=mem<uint8_t>(0x11d2620);
+  if(FILE* f=_wfopen((root+L"\\spell-log.txt").c_str(),L"ab")){fprintf(f,"tick=%u magic=%u\r\n",tick,magicLast);fclose(f);}}
+ if(mem<uint16_t>(0xa6ef82)==49)until=tick+200;
+ if(tick>=until||tick==lastTick||lines>4000)return;lastTick=tick;
+ FILE* f=_wfopen((root+L"\\spell-log.txt").c_str(),L"ab");if(!f)return;
+ for(unsigned id=1;id<1200;++id)if(heroUnit(id)){uintptr_t u=0x7ca6e8+id*2308;++lines;
+  fprintf(f,"tick=%u hero=%u type=%u mana=%d/%d pos=%d,%d pending=%u action=%u state=%d target=%d,%d retry=%d/%d busy=%u\r\n",tick,id,mem<uint8_t>(u+0x75),mem<int32_t>(u+0xa0),mem<int32_t>(u+0x10c),mem<int16_t>(u+0x2a8),mem<int16_t>(u+0x2aa),mem<uint16_t>(u+0x388),mem<uint16_t>(u+0x290),mem<int32_t>(u+0x1f0),mem<int16_t>(u+0x328),mem<int16_t>(u+0x32a),mem<int16_t>(u+0x216),mem<int16_t>(u+0x218),mem<uint8_t>(u+0x325));}
+ fclose(f);
+}
+
 // ---- Hero portrait bar ---------------------------------------------------
 struct HeroCard {RECT box;uint32_t handle;};
 std::vector<HeroCard> heroCards;
@@ -157,6 +270,8 @@ LRESULT CALLBACK localWindowProc(HWND window,UINT message,WPARAM key,LPARAM data
  if(cursorClipped&&((message==WM_ACTIVATEAPP&&!key)||message==WM_KILLFOCUS||(message==WM_SIZE&&key==SIZE_MINIMIZED)||(message==WM_MOUSEMOVE&&mem<uint16_t>(0x4dec90)!=3)))releaseCursor();
  if(message==WM_LBUTTONDOWN&&!heroCards.empty()&&inBattleInput()&&clickHero()){swallowLeftUp=true;return 0;}
  if(message==WM_LBUTTONUP&&swallowLeftUp){swallowLeftUp=false;return 0;}
+ if(message==WM_LBUTTONDOWN&&!playback&&inBattleInput()&&GetKeyState(VK_SHIFT)<0)beginWallDrag();
+ if(message==WM_LBUTTONUP)endWallDrag();
  if(keyMapActive&&key<256&&(message==WM_KEYDOWN||message==WM_SYSKEYDOWN||message==WM_KEYUP||message==WM_SYSKEYUP)){
   uint8_t mapped=keyMap[key];
   if(mapped!=key){

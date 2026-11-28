@@ -8,7 +8,7 @@ function Get-PackageHash([string]$Path) {
 }
 $resultLog = Join-Path ([IO.Path]::GetDirectoryName($Package)) 'update-result.log'
 try {
-if ($CurrentEntrypoint -and $CurrentEntrypoint -ne 'MythLauncher.exe' -and $CurrentEntrypoint -notmatch '^MythLauncher-\d+\.\d+\.\d+(-preview)?\.exe$') { throw 'Invalid current entrypoint' }
+if ($CurrentEntrypoint -and $CurrentEntrypoint -ne 'MythLauncher.exe' -and $CurrentEntrypoint -notmatch '^MythLauncher-\d+\.\d+\.\d+(-preview)?\.exe$' -and $CurrentEntrypoint -notmatch '^MMyth_launcher_\d+\.\d+\.\d+(-preview)?\.exe$') { throw 'Invalid current entrypoint' }
 $stage = Join-Path ([IO.Path]::GetDirectoryName($Package)) ('expanded-' + [Guid]::NewGuid().ToString('N'))
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($Package)
@@ -45,7 +45,9 @@ $backup = Join-Path $Target ('update-backup-' + (Get-Date -Format 'yyyyMMddHHmms
 New-Item -ItemType Directory -Path $backup | Out-Null
 $changed = @()
 $installNames = @($allowed)
-if ($CurrentEntrypoint -and $CurrentEntrypoint -notin $installNames) { $installNames += $CurrentEntrypoint }
+# A branded MMyth_launcher_<version>.exe keeps its own version; the restarted
+# launcher creates the next branded copy itself.
+if ($CurrentEntrypoint -and $CurrentEntrypoint -notin $installNames -and $CurrentEntrypoint -notmatch '^MMyth_launcher_') { $installNames += $CurrentEntrypoint }
 try {
     foreach ($name in $allowed) {
         $source = Join-Path $stage $name

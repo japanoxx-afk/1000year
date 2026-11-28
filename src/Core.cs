@@ -46,7 +46,7 @@ namespace Myth {
   }
  }
  public static class Core {
-  public const string Version="0.7.1";
+  public const string Version="0.7.2";
   public static string Home=AppDomain.CurrentDomain.BaseDirectory;
   public static string UserHome=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"1000year");
   public static string Hash(string path) {using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -73,6 +73,11 @@ namespace Myth {
    string recipeName=legacy?"Myth.LegacyWide060":legacyPortable?"Myth.LegacyPortable0611":mode==4?"Myth.SvgaRecipe":mode==3?"Myth.WideRecipe":mode==2?"Myth.HDRecipe":"Myth.PortableRecipe";
    if(mode==2&&replayPatchHash=="f0ff328ae4ef632b2e7a70667d3db12890b4ad93c4ff9129437c21708d7d86e2")recipeName="Myth.LegacyHD0612";
    if(mode==3&&replayPatchHash=="f94aecb3d084c44d779b98be054be365148c55321044d36c5321730e0d09093f")recipeName="Myth.LegacyWide0612";
+   // 0.6.12-0.7.1 executables (watchtower supply 5), kept for replay playback.
+   if(mode<2&&replayPatchHash=="9b7d189c0276cddc245c09457ef10a2937ebab52ed6d1bdac0dc7f14049e9333")recipeName="Myth.LegacyPortable071";
+   if(mode==2&&replayPatchHash=="cf95f4f6cc2fb3ad8eb076595ec794d8f10bc68afc7820ed4da6719313d1df82")recipeName="Myth.LegacyHD071";
+   if(mode==3&&replayPatchHash=="665354faa4c1cc372a50e93b4fd15dfbf39d91bcbfa775a4f953c14212111127")recipeName="Myth.LegacyWide071";
+   if(mode==4&&replayPatchHash=="029f0238c4603b7ed7f62105ea572a9117b4e7334fb4793270220fdbf416d833")recipeName="Myth.LegacySvga071";
    var recipe=new JavaScriptSerializer().Deserialize<Recipe>(System.Text.Encoding.UTF8.GetString(Resource(recipeName)));
    byte[] patched=Patch(File.ReadAllBytes(source),recipe);
    string target=Path.Combine(directory,mode==4?"MMyth.SVGA.exe":mode==3?"MMyth.Wide.exe":mode==2?"MMyth.HD.exe":"MMyth.Portable.exe");
@@ -103,7 +108,9 @@ namespace Myth {
    foreach(string name in new[]{"ddraw.dll","ddraw.ini"}){string file=Path.Combine(directory,name),backup=file+".1000year-original";if(File.Exists(backup))File.Copy(backup,file,true);else if(File.Exists(file+".1000year-absent")&&File.Exists(file)&&File.Exists(file+".1000year-managed")&&Hash(file)==File.ReadAllText(file+".1000year-managed"))File.Delete(file);}
    Log("Original graphics restored: "+directory);
   }
-  public static bool GameRunning(string directory) {foreach(var p in Process.GetProcesses()){using(p){try{if((p.ProcessName.StartsWith("MMyth",StringComparison.OrdinalIgnoreCase))&&String.Equals(Path.GetDirectoryName(p.MainModule.FileName),Path.GetFullPath(directory),StringComparison.OrdinalIgnoreCase))return true;}catch{}}}return false;}
+  // The launcher itself is named MMyth_launcher_<version>.exe and may live in the game folder.
+  public static bool IsLauncherName(string processName){return processName.StartsWith("MMyth_launcher",StringComparison.OrdinalIgnoreCase);}
+  public static bool GameRunning(string directory) {foreach(var p in Process.GetProcesses()){using(p){try{if(p.ProcessName.StartsWith("MMyth",StringComparison.OrdinalIgnoreCase)&&!IsLauncherName(p.ProcessName)&&String.Equals(Path.GetDirectoryName(p.MainModule.FileName),Path.GetFullPath(directory),StringComparison.OrdinalIgnoreCase))return true;}catch{}}}return false;}
  }
 }
 

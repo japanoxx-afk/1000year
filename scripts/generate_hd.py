@@ -47,7 +47,9 @@ for a in [0x46aff7,0x46b02d,0x47f9b7,0x47f9d7]:d(a,H-1,'viewport bottom')
 for a in [0x46affc,0x46b019,0x47f9bc,0x47f9c8]:d(a,VW-1,'viewport right')
 for a,x in [(0x47f9e9,W),(0x47f9f3,H),(0x47fe3f,H),(0x47fe44,VW),(0x47fe49,buf),(0x47fe82,H-1),(0x47fe87,VW-1),(0x480556,H-1),(0x48055b,VW-1),(0x46bdc0,buf),(0x46bdc5,H),(0x46bdca,VW)]:d(a,x,'expanded terrain cache')
 md=capstone.Cs(3,4);md.detail=True
-for a,z in [(0x480588,0x480809),(0x480850,0x480c30)]:
+# 00480C30..0048107A is the ground-unit pass of the same function: left at 13 tiles, units vanished
+# towards the screen corners while the terrain under them was still drawn.
+for a,z in [(0x480588,0x480809),(0x480850,0x48107a)]:
  for i in md.disasm(p.get_data(a-0x400000,z-a),a):
   if i.mnemonic in ['add','sub'] and i.operands[-1].type==2 and i.operands[-1].imm==13:
    off=i.imm_offset;sz=i.imm_size;patch(i.address+off,(24).to_bytes(sz,'little'),'expanded visible tile traversal')
