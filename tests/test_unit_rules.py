@@ -70,6 +70,33 @@ for m in ('portable','svga','hd','wide'):
  assert ground(image,0,1,3)==(3,0,30|40<<16,25,0,0)        # Shift move: queued waypoint, mode ends
 assert ground(source,0,1,180)==(180,1,30|40<<16,25,0,0) and ground(source,1,0,180)[1]==0
 print('PASS Shift queues construction and keeps placement mode; plain/Ctrl clicks unchanged; original ignored Shift')
+# A wall line of Shift clicks: every click appends its tile to the native click list (0042BFF0) and the
+# sender reads entry 0. Each click must send its own tile, and the list must never grow into the selection.
+def shift_line(image,clicks):
+ p=pefile.PE(data=image);u=Uc(UC_ARCH_X86,UC_MODE_32)
+ from unicorn import UC_HOOK_CODE
+ from unicorn.x86_const import UC_X86_REG_EBX,UC_X86_REG_EDI,UC_X86_REG_ECX
+ u.mem_map(0x400000,(p.OPTIONAL_HEADER.SizeOfImage+0xfff)&~0xfff);u.mem_write(0x400000,p.get_memory_mapped_image())
+ u.mem_map(0x200000,0x100000);u.mem_write(0x435040,b'\xc3');u.mem_write(0x2f0000,b'\xc3')
+ put=lambda a,v:u.mem_write(a,struct.pack('<I',v))
+ put(0xced908,0);put(0xced910,1);u.mem_write(0xa6ef82,struct.pack('<H',180))
+ u.mem_write(0xb8dd80+180*24+4,struct.pack('<H',5));put(0xb60d5c+5*896,0x4842)
+ selection=struct.pack('<H',3)+bytes(2)+struct.pack('<20I',*range(101,121))
+ u.mem_write(0xa7957c,selection)
+ sent=[]
+ def h(uc,a,s,d):
+  sp=uc.reg_read(UC_X86_REG_ESP);sent.append(struct.unpack('<6I',uc.mem_read(sp,24))[3])
+ u.hook_add(UC_HOOK_CODE,h,begin=0x435040,end=0x435040)
+ for x,y in clicks:
+  u.reg_write(UC_X86_REG_ESP,0x2e0000);u.mem_write(0x2e0000,struct.pack('<IIII',0x2f0000,x,y,0));u.reg_write(UC_X86_REG_ECX,0xa6e9a8)
+  u.emu_start(0x42bff0,0x2f0000,count=200)
+  u.reg_write(UC_X86_REG_EBX,0);u.reg_write(UC_X86_REG_EDI,1);u.reg_write(UC_X86_REG_ESP,0x2e0000)
+  u.emu_start(0x46ec3a,0x46ed42,count=500)
+ return [(v&0xffff,v>>16) for v in sent],bytes(u.mem_read(0xa7957c,len(selection)))==selection
+line=[(40+i,50) for i in range(14)]
+for m in ('portable','svga','hd','wide'):
+ tiles,kept=shift_line(build(m),line);assert tiles==line and kept,(m,tiles[:4],kept)
+print('PASS 14 Shift-clicked wall segments: each click sends its own tile; selection memory untouched')
 # "magic": chat word -> marked native cheat command -> toggle -> mana setter and per-tick refill.
 def magic_checks(image,patched):
  from unicorn import UC_HOOK_CODE

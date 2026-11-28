@@ -21,15 +21,20 @@ jobs:
             dist/MMyth_launcher_*.exe
             dist/MythLauncher.zip
             dist/MythLauncher.zip.sha256
-      - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish release
+        # A push to main whose source version has no release yet publishes it
+        # (the release creates the v<version> tag). A pushed v* tag also works.
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version=[regex]::Match((Get-Content src/Core.cs -Raw),'Version="([^"]+)"').Groups[1].Value
-          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag/source version mismatch' }
-          gh release create $env:GITHUB_REF_NAME "dist/MMyth_launcher_$version.exe" dist/MythLauncher.zip dist/MythLauncher.zip.sha256 --title "1000year Launcher $version" --notes-file PATCHNOTES.md --verify-tag
+          $tag="v$version"
+          if ($env:GITHUB_REF -like 'refs/tags/*' -and $env:GITHUB_REF_NAME -ne $tag) { throw 'Tag/source version mismatch' }
+          gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" --silent 2>$null
+          if ($LASTEXITCODE -eq 0) { Write-Host "Release $tag already exists; nothing to publish."; exit 0 }
+          gh release create $tag "dist/MMyth_launcher_$version.exe" dist/MythLauncher.zip dist/MythLauncher.zip.sha256 --title "1000year Launcher $version" --notes-file PATCHNOTES.md --target $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
       - name: Attach test build to a private draft release
         if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'

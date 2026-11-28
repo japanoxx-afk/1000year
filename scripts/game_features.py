@@ -111,7 +111,11 @@ def install(g):
  # Shift placement of a building (a command whose table type, +4, is a
  # building: unit-type flags 0xB60D5C bit 2) keeps placement mode active so
  # wall segments can be placed one after another. A6EF80 (waiting for a target
- # click) must be set again: the sender at 0046E860 runs every frame while it is 0. Releasing Shift, Esc or a
+ # click) must be set again: the sender at 0046E860 runs every frame while it is 0. The click target list
+ # (count 00A79502, 12-byte entries from 00A79504, filled by 0042BFF0 on every click) must be emptied as the
+ # native reset does: the sender always reads entry 0, so a kept list re-sent the first tile for every later
+ # click, and from the 11th click the native append wrote past the list into the selection (00A7957C/80/84),
+ # breaking selection and right-click commands after a wall line. Releasing Shift, Esc or a
  # right click ends placement exactly as before.
  assert bytes(g['b'][g['p'].get_offset_from_rva(0x46ec3a-0x400000):][:8])==bytes.fromhex('393d08d9ce00751e')
  g['hook'](0x46ec3a,8,'''cmp dword ptr [0xced908],1; je queued;
@@ -122,7 +126,7 @@ def install(g):
  inc eax; lea eax,[eax+eax*2]; movsx eax,word ptr [eax*8+0xb8dd84];
  cmp eax,0x4d; je reset; test eax,eax; jle reset; cmp eax,200; jge reset;
  imul eax,eax,896; test byte ptr [eax+0xb60d5c],2; jz reset;
- mov byte ptr [0xa6ef80],1; jmp 0x46ed42;
+ mov word ptr [0xa79502],bx; mov byte ptr [0xa6ef80],1; jmp 0x46ed42;
  reset: mov word ptr [0xa6ef82],bx; jmp 0x46ed1f''')
  # "magic" cheat (also "1_magic", any letter case, surrounding spaces ignored): mana is refilled when switched
  # on and is not consumed. Like the native cheats it travels as a type-2 command so every client and the replay
