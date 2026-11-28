@@ -70,3 +70,38 @@ for m in ('portable','svga','hd','wide'):
  assert ground(image,0,1,3)==(3,0,30|40<<16,25,0,0)        # Shift move: queued waypoint, mode ends
 assert ground(source,0,1,180)==(180,1,30|40<<16,25,0,0) and ground(source,1,0,180)[1]==0
 print('PASS Shift queues construction and keeps placement mode; plain/Ctrl clicks unchanged; original ignored Shift')
+# "1_magic": chat word -> marked native cheat command -> toggle -> mana setter.
+def magic_checks(image,patched):
+ from unicorn import UC_HOOK_CODE
+ from unicorn.x86_const import UC_X86_REG_ECX,UC_X86_REG_EAX,UC_X86_REG_EIP
+ p=pefile.PE(data=image);u=Uc(UC_ARCH_X86,UC_MODE_32)
+ u.mem_map(0x400000,(p.OPTIONAL_HEADER.SizeOfImage+0xfff)&~0xfff);u.mem_write(0x400000,p.get_memory_mapped_image())
+ u.mem_map(0x200000,0x100000);u.mem_write(0x2f0000,b'\xc3');u.mem_write(0x435040,b'\xc3')
+ sec=p.sections[-1];flag=0x400000+sec.VirtualAddress+0x2620
+ sent=[]
+ def h(uc,a,s,d):sent.append(struct.unpack('<5I',uc.mem_read(uc.reg_read(UC_X86_REG_ESP)+4,20)))
+ u.hook_add(UC_HOOK_CODE,h,begin=0x435040,end=0x435040)
+ def call(addr,args=b'',ecx=0,count=20000):
+  u.reg_write(UC_X86_REG_ESP,0x2e0000);u.mem_write(0x2e0000,struct.pack('<I',0x2f0000)+args);u.reg_write(UC_X86_REG_ECX,ecx)
+  u.emu_start(addr,0x2f0000,count=count);assert u.reg_read(UC_X86_REG_EIP)==0x2f0000;return u.reg_read(UC_X86_REG_EAX)
+ MARK=0x4947414d
+ for text,expect in ((b'1_magic\0',patched),(b'1_magi\0',False),(b'1_magics\0',False),(b'hello\0',False)):
+  sent.clear();u.mem_write(0x250000,text);u.mem_write(0xcbdc3c,struct.pack('<I',2));u.mem_write(0x260000,bytes(0x100))
+  call(0x41a6a0,struct.pack('<I',0x250000),ecx=0x260000)
+  assert (sent==[(2,0x15e,MARK,0,1)])==expect,(text,sent)
+ if not patched:return
+ packet=lambda kind,xy:struct.pack('<HBBII',kind,0,1,xy,0)+bytes(92)
+ u.mem_write(0x260000,bytes(0x100))
+ hero=0x7ca6e8+33*2308;u.mem_write(hero+0x10c,struct.pack('<i',150));u.mem_write(hero+0xa0,struct.pack('<i',3))
+ call(0x41aa00,packet(0x15e,MARK),ecx=0x260000,count=200000);assert u.mem_read(flag,1)[0]==1
+ assert struct.unpack('<i',u.mem_read(hero+0xa0,4))[0]==150      # switched on: mana refilled
+ assert bytes(u.mem_read(0x260000,0x80))==bytes(0x80)          # native map cheat state untouched
+ unit=0x270000;setm=lambda v:u.mem_write(unit+0xa0,struct.pack('<i',v));getm=lambda:struct.unpack('<i',u.mem_read(unit+0xa0,4))[0]
+ u.mem_write(unit+0x10c,struct.pack('<i',100));setm(100);call(0x416e10,struct.pack('<i',0),ecx=unit);assert getm()==100
+ call(0x41aa00,packet(0x15e,MARK),ecx=0x260000);assert u.mem_read(flag,1)[0]==0      # toggles off
+ call(0x416e10,struct.pack('<i',0),ecx=unit);assert getm()==0
+ call(0x416e10,struct.pack('<i',250),ecx=unit);assert getm()==100;call(0x416e10,struct.pack('<i',-5),ecx=unit);assert getm()==0
+ call(0x41aa00,packet(0x15e,MARK),ecx=0x260000);call(0x41a3e0,ecx=0x260000);assert u.mem_read(flag,1)[0]==0  # battle init resets
+for m in ('portable','svga','hd','wide'):magic_checks(build(m),True)
+magic_checks(source,False)
+print('PASS 1_magic: exact chat word sends a marked cheat command, toggles in every resolution, mana setter keeps maximum, off/reset restore native behaviour')

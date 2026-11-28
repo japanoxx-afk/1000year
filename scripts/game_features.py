@@ -124,6 +124,29 @@ def install(g):
  imul eax,eax,896; test byte ptr [eax+0xb60d5c],2; jz reset;
  mov byte ptr [0xa6ef80],1; jmp 0x46ed42;
  reset: mov word ptr [0xa6ef82],bx; jmp 0x46ed1f''')
+ # "1_magic" cheat: mana is refilled when switched on and is not consumed. Like the native cheats it travels as
+ # a type-2 command so every client and the replay toggle it on the same tick:
+ # native cheat command 0x15E carries a marker in its unused tile field.
+ MARK=0x4947414d;magic=g['va']+0x2620;word=g['va']+0x2600
+ g['b'][g['raw']+0x2600:g['raw']+0x2608]=b'1_magic\0'
+ g['hook'](0x41a6a0,8,f'''push ebx; push ebp; push esi; push edi; mov edi,dword ptr [esp+0x14];
+ pushad; mov esi,edi; mov edi,{word};
+ next: mov al,byte ptr [esi]; cmp al,byte ptr [edi]; jne no; inc esi; inc edi; test al,al; jnz next;
+ push 1; push 0; push {MARK}; push 0x15e; movsx eax,word ptr [0xcbdc3c]; push eax; call 0x435040; add esp,20;
+ no: popad; jmp 0x41a6a8''')
+ g['hook'](0x41aa00,8,f'''cmp word ptr [esp+4],0x15e; jne native; cmp dword ptr [esp+8],{MARK}; jne native;
+ xor byte ptr [{magic}],1; jz done;
+ mov eax,0x7ca6e8; mov edx,1200;
+ fill: mov ecx,dword ptr [eax+0x10c]; test ecx,ecx; jle skip; mov dword ptr [eax+0xa0],ecx;
+ skip: add eax,2308; dec edx; jnz fill;
+ done: ret 0x68;
+ native: sub esp,8; movsx eax,word ptr [esp+0xc]; jmp 0x41aa08''')
+ # Battle initialisation resets the native cheat object; reset ours with it.
+ g['hook'](0x41a3e0,8,f'mov byte ptr [{magic}],0; xor eax,eax; mov dword ptr [ecx],eax; mov word ptr [ecx+4],ax; jmp 0x41a3e8')
+ # Every mana write through the native setter keeps mana at its maximum.
+ g['hook'](0x416e10,7,f'''cmp byte ptr [{magic}],0; je native;
+ mov eax,dword ptr [ecx+0x10c]; mov dword ptr [ecx+0xa0],eax; xor ax,ax; ret 4;
+ native: mov eax,dword ptr [esp+4]; test ax,ax; jmp 0x416e17''')
  # Original-resolution clients need identical simulation/input rules, without
  # importing HD resource layout, selection widgets or a display-mode switch.
  if g.get('rules_only'):return dict(rally=rally,exit_score=exit_score)
