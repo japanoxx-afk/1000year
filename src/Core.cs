@@ -108,7 +108,9 @@ namespace Myth {
    foreach(string name in new[]{"ddraw.dll","ddraw.ini"}){string file=Path.Combine(directory,name),backup=file+".1000year-original";if(File.Exists(backup))File.Copy(backup,file,true);else if(File.Exists(file+".1000year-absent")&&File.Exists(file)&&File.Exists(file+".1000year-managed")&&Hash(file)==File.ReadAllText(file+".1000year-managed"))File.Delete(file);}
    Log("Original graphics restored: "+directory);
   }
-  public static bool GameRunning(string directory) {foreach(var p in Process.GetProcesses()){using(p){try{if((p.ProcessName.StartsWith("MMyth",StringComparison.OrdinalIgnoreCase))&&String.Equals(Path.GetDirectoryName(p.MainModule.FileName),Path.GetFullPath(directory),StringComparison.OrdinalIgnoreCase))return true;}catch{}}}return false;}
+  // The launcher itself is named MMyth_launcher_<version>.exe and may live in the game folder.
+  public static bool IsLauncherName(string processName){return processName.StartsWith("MMyth_launcher",StringComparison.OrdinalIgnoreCase);}
+  public static bool GameRunning(string directory) {foreach(var p in Process.GetProcesses()){using(p){try{if(p.ProcessName.StartsWith("MMyth",StringComparison.OrdinalIgnoreCase)&&!IsLauncherName(p.ProcessName)&&String.Equals(Path.GetDirectoryName(p.MainModule.FileName),Path.GetFullPath(directory),StringComparison.OrdinalIgnoreCase))return true;}catch{}}}return false;}
  }
 }
 
