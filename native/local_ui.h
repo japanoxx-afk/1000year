@@ -110,31 +110,56 @@ std::vector<Tile> wallSteps(Tile from,Tile to,int w,int h,const std::vector<Tile
  }
  return out;
 }
-void beginWallDrag(){
- wallDrag=placementType()!=0;wallPlaced.clear();
- if(wallDrag){wallLast={mem<int16_t>(0x7a0fa8),mem<int16_t>(0x7a0faa)};wallPlaced.push_back(wallLast);}
+// The chain holds every segment of this drag. All but the last are sent; the
+// last one stays pending because the native click handler sends the tile under
+// the cursor itself when the button is released (no duplicates).
+size_t wallSent=0;
+bool wallValid(const Tile& t,int type){return ((int(__thiscall*)(void*,int,int,int,int))0x42d690)((void*)0xca5598,t.x,t.y,type,mem<int32_t>(0xa6eba2))==1;}
+void wallSend(const Tile& t,int type){
+ if(!wallValid(t,type))return;
+ uint32_t tile=(uint32_t)(uint16_t)t.x|((uint32_t)(uint16_t)t.y<<16);
+ ((int(__cdecl*)(int,int,int,int,int))0x435040)(mem<int16_t>(0xcbdc3c),mem<uint16_t>(0xa6ef82),tile,0,0);
 }
+void wallFlush(int limit){
+ int type=placementType();if(!type){wallSent=wallPlaced.size();return;}
+ while(wallSent+1<wallPlaced.size()&&limit-->0)wallSend(wallPlaced[wallSent++],type);
+}
+void beginWallDrag(){
+ wallDrag=placementType()!=0&&mem<uint8_t>(0xa6ef80)==1;wallPlaced.clear();wallSent=0;
+ if(wallDrag){wallLast={mem<int16_t>(0x7a0fa8),mem<int16_t>(0x7a0faa)};if(wallLast.x<0||wallLast.y<0)wallDrag=false;else wallPlaced.push_back(wallLast);}
+}
+void endWallDrag(){if(wallDrag){wallFlush(wallLimit);
+  // The released tile is sent natively only when it is the pending one.
+  Tile cursor{mem<int16_t>(0x7a0fa8),mem<int16_t>(0x7a0faa)};int type=placementType();
+  if(type&&!wallPlaced.empty()&&(wallPlaced.back().x!=cursor.x||wallPlaced.back().y!=cursor.y)&&wallPlaced.size()>1)wallSend(wallPlaced.back(),type);
+ }wallDrag=false;}
 void updateWallDrag(){
  if(!wallDrag)return;
  int type=placementType();
- if(playback||!type||!inBattleInput()||!(GetAsyncKeyState(VK_LBUTTON)&0x8000)||mem<int32_t>(0xced910)!=1){wallDrag=false;return;}
+ if(playback||!type||!inBattleInput()||mem<int32_t>(0xced910)!=1){wallDrag=false;return;}
  Tile cursor{mem<int16_t>(0x7a0fa8),mem<int16_t>(0x7a0faa)};
- if(cursor.x==wallLast.x&&cursor.y==wallLast.y)return;
- int w=mem<int16_t>(0xb60d26+type*896),h=mem<int16_t>(0xb60d28+type*896);
- // The command tile and the preview tile come from the same cursor sample.
- int offsetX=mem<int32_t>(0xa79504)-cursor.x,offsetY=mem<int32_t>(0xa79508)-cursor.y;
- if(abs(offsetX)>8||abs(offsetY)>8)offsetX=offsetY=0;
- unsigned kind=mem<uint16_t>(0xa6ef82);int builder=mem<int32_t>(0xa6eba2),sent=0;Tile reached=wallLast;
- for(const Tile& t:wallSteps(wallLast,cursor,w,h,wallPlaced)){
-  if(wallPlaced.size()>=wallLimit||sent>=wallPerFrame)break;
-  reached=t;
-  if(((int(__thiscall*)(void*,int,int,int,int))0x42d690)((void*)0xca5598,t.x,t.y,type,builder)!=1)continue;
-  uint32_t tile=(uint32_t)(uint16_t)(t.x+offsetX)|((uint32_t)(uint16_t)(t.y+offsetY)<<16);
-  ((int(__cdecl*)(int,int,int,int,int))0x435040)(mem<int16_t>(0xcbdc3c),kind,tile,0,0);
-  wallPlaced.push_back(t);++sent;
+ if(cursor.x>=0&&cursor.y>=0&&wallPlaced.size()<wallLimit&&(cursor.x!=wallLast.x||cursor.y!=wallLast.y)){
+  int w=mem<int16_t>(0xb60d26+type*896),h=mem<int16_t>(0xb60d28+type*896);
+  for(const Tile& t:wallSteps(wallPlaced.back(),cursor,w,h,wallPlaced)){if(wallPlaced.size()>=wallLimit)break;wallPlaced.push_back(t);}
+  wallLast=cursor;
  }
- wallLast=sent>=wallPerFrame||wallPlaced.size()>=wallLimit?reached:cursor;
- if(wallPlaced.size()>=wallLimit)wallDrag=false;
+ wallFlush(wallPerFrame);
+}
+
+bool heroUnit(unsigned id);
+// ---- Spell diagnostics ---------------------------------------------------
+// After the local player arms a hero spell (targeting mode with command 49),
+// record my heroes' mana and order state for a few seconds in the session
+// folder. Read-only; helps explain a spell that did not start.
+void logSpell(){
+ static uint32_t until=0,lastTick=0xffffffff,lines=0;
+ if(playback||mem<uint16_t>(0x4dec90)!=3)return;uint32_t tick=mem<uint32_t>(0xa6ea50);
+ if(mem<uint16_t>(0xa6ef82)==49)until=tick+200;
+ if(tick>=until||tick==lastTick||lines>4000)return;lastTick=tick;
+ FILE* f=_wfopen((root+L"\\spell-log.txt").c_str(),L"ab");if(!f)return;
+ for(unsigned id=1;id<1200;++id)if(heroUnit(id)){uintptr_t u=0x7ca6e8+id*2308;++lines;
+  fprintf(f,"tick=%u hero=%u type=%u mana=%d/%d pos=%d,%d pending=%u action=%u state=%d target=%d,%d retry=%d/%d busy=%u\r\n",tick,id,mem<uint8_t>(u+0x75),mem<int32_t>(u+0xa0),mem<int32_t>(u+0x10c),mem<int16_t>(u+0x2a8),mem<int16_t>(u+0x2aa),mem<uint16_t>(u+0x388),mem<uint16_t>(u+0x290),mem<int32_t>(u+0x1f0),mem<int16_t>(u+0x328),mem<int16_t>(u+0x32a),mem<int16_t>(u+0x216),mem<int16_t>(u+0x218),mem<uint8_t>(u+0x325));}
+ fclose(f);
 }
 
 // ---- Hero portrait bar ---------------------------------------------------
@@ -241,7 +266,7 @@ LRESULT CALLBACK localWindowProc(HWND window,UINT message,WPARAM key,LPARAM data
  if(message==WM_LBUTTONDOWN&&!heroCards.empty()&&inBattleInput()&&clickHero()){swallowLeftUp=true;return 0;}
  if(message==WM_LBUTTONUP&&swallowLeftUp){swallowLeftUp=false;return 0;}
  if(message==WM_LBUTTONDOWN&&!playback&&inBattleInput()&&GetKeyState(VK_SHIFT)<0)beginWallDrag();
- if(message==WM_LBUTTONUP)wallDrag=false;
+ if(message==WM_LBUTTONUP)endWallDrag();
  if(keyMapActive&&key<256&&(message==WM_KEYDOWN||message==WM_SYSKEYDOWN||message==WM_KEYUP||message==WM_SYSKEYUP)){
   uint8_t mapped=keyMap[key];
   if(mapped!=key){

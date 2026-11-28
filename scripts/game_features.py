@@ -110,7 +110,8 @@ def install(g):
  # the unit's 10-entry order queue, 00464400). Shift now queues as well, and a
  # Shift placement of a building (a command whose table type, +4, is a
  # building: unit-type flags 0xB60D5C bit 2) keeps placement mode active so
- # wall segments can be placed one after another. Releasing Shift, Esc or a
+ # wall segments can be placed one after another. A6EF80 (waiting for a target
+ # click) must be set again: the sender at 0046E860 runs every frame while it is 0. Releasing Shift, Esc or a
  # right click ends placement exactly as before.
  assert bytes(g['b'][g['p'].get_offset_from_rva(0x46ec3a-0x400000):][:8])==bytes.fromhex('393d08d9ce00751e')
  g['hook'](0x46ec3a,8,'''cmp dword ptr [0xced908],1; je queued;
@@ -120,7 +121,8 @@ def install(g):
  movzx eax,word ptr [0xa6ef82]; dec eax; cmp eax,362; ja reset;
  inc eax; lea eax,[eax+eax*2]; movsx eax,word ptr [eax*8+0xb8dd84];
  cmp eax,0x4d; je reset; test eax,eax; jle reset; cmp eax,200; jge reset;
- imul eax,eax,896; test byte ptr [eax+0xb60d5c],2; jz reset; jmp 0x46ed42;
+ imul eax,eax,896; test byte ptr [eax+0xb60d5c],2; jz reset;
+ mov byte ptr [0xa6ef80],1; jmp 0x46ed42;
  reset: mov word ptr [0xa6ef82],bx; jmp 0x46ed1f''')
  # Original-resolution clients need identical simulation/input rules, without
  # importing HD resource layout, selection widgets or a display-mode switch.

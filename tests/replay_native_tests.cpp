@@ -149,8 +149,9 @@ int main(){
   auto e=wallSteps({5,5},{5,5},1,1,{{5,5}});assert(e.empty());}
  // Drag starts only in building placement mode.
  mem<uint16_t>(0xa6ef82)=180;mem<uint16_t>(0xa6eba0)=5;mem<int16_t>(0x7a0fa8)=20;mem<int16_t>(0x7a0faa)=21;
- beginWallDrag();assert(wallDrag&&wallPlaced.size()==1&&wallLast.x==20&&wallLast.y==21);
- mem<uint16_t>(0xa6ef82)=3;beginWallDrag();assert(!wallDrag);mem<uint16_t>(0xa6ef82)=0;mem<uint16_t>(0xa6eba0)=0;
+ mem<uint8_t>(0xa6ef80)=1;beginWallDrag();assert(wallDrag&&wallPlaced.size()==1&&wallSent==0&&wallLast.x==20&&wallLast.y==21);
+ mem<uint8_t>(0xa6ef80)=0;beginWallDrag();assert(!wallDrag);mem<uint8_t>(0xa6ef80)=1;
+ mem<uint16_t>(0xa6ef82)=3;beginWallDrag();assert(!wallDrag);mem<uint16_t>(0xa6ef82)=0;mem<uint16_t>(0xa6eba0)=0;mem<uint8_t>(0xa6ef80)=0;wallDrag=false;
  std::cout<<"PASS: asynchronous progress status never overwrites COMPLETE; local hotkey translation/release/chat and menu passthrough, polled keys unmapped, hero ownership and card hit testing, queued building previews (mine only, buildings only), Shift-drag wall line spacing and start conditions\n";
  std::cout<<"PASS: hero arrival visuals/chime suppression, replay/live HUD timer, raw/derived fog restoration, enemy/dead/embarked visibility, indexed panel stability/clean restoration across pitch changes, positional combat audio, resource rows, x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
 }

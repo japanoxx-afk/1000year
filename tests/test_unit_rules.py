@@ -61,12 +61,12 @@ def ground(image,ctrl,shift,command):
  u.hook_add(UC_HOOK_CODE,h,begin=0x435040,end=0x435040)
  u.emu_start(0x46ec3a,0x46ed42,count=500)
  kind,flag,xy,param=sent[0][2]&0xffff,sent[0][5]&0xff,sent[0][3],sent[0][4]
- return kind,flag,xy,param,struct.unpack('<H',u.mem_read(0xa6ef82,2))[0]
+ return kind,flag,xy,param,struct.unpack('<H',u.mem_read(0xa6ef82,2))[0],u.mem_read(0xa6ef80,1)[0]
 for m in ('portable','svga','hd','wide'):
  image=build(m)
- assert ground(image,0,0,180)==(180,1,30|40<<16,25,0)      # plain building click: immediate, leave placement
- assert ground(image,1,0,180)==(180,0,30|40<<16,25,0)      # Ctrl (native): queued, leave placement
- assert ground(image,0,1,180)==(180,0,30|40<<16,25,180)    # Shift building: queued, stay in placement
- assert ground(image,0,1,3)==(3,0,30|40<<16,25,0)          # Shift move: queued waypoint, mode ends
-assert ground(source,0,1,180)==(180,1,30|40<<16,25,0) and ground(source,1,0,180)[1]==0
+ assert ground(image,0,0,180)==(180,1,30|40<<16,25,0,0)    # plain building click: immediate, leave placement
+ assert ground(image,1,0,180)==(180,0,30|40<<16,25,0,0)    # Ctrl (native): queued, leave placement
+ assert ground(image,0,1,180)==(180,0,30|40<<16,25,180,1)  # Shift building: queued, command kept AND waiting for the next click
+ assert ground(image,0,1,3)==(3,0,30|40<<16,25,0,0)        # Shift move: queued waypoint, mode ends
+assert ground(source,0,1,180)==(180,1,30|40<<16,25,0,0) and ground(source,1,0,180)[1]==0
 print('PASS Shift queues construction and keeps placement mode; plain/Ctrl clicks unchanged; original ignored Shift')

@@ -320,7 +320,7 @@ void dumpObserverFrame(){
 }
 #endif
 #include "local_ui.h"
-uint32_t __cdecl observerHud(){serviceBattleMusic();attachLocalInput();confineCursor();updateWallDrag();ObserverView view;
+uint32_t __cdecl observerHud(){serviceBattleMusic();attachLocalInput();confineCursor();updateWallDrag();logSpell();ObserverView view;
 #ifdef MYTH_PERF_TEST
  auto started=counterNow();drawResources();profileRender(1,started);started=counterNow();drawTimer();profileRender(2,started);
 #else

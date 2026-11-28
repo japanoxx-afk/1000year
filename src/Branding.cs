@@ -45,7 +45,7 @@ namespace Myth {
     for(int i=0;i<images.Count;i++){ushort id=(ushort)(1001+i);BitConverter.GetBytes(id).CopyTo(group,6+14*i+12);if(!UpdateResource(update,IconType,(IntPtr)id,0,images[i],(uint)images[i].Length))throw new IOException("아이콘 이미지 쓰기 실패");}
     if(!UpdateResource(update,GroupType,(IntPtr)1,0,group,(uint)group.Length))throw new IOException("아이콘 그룹 쓰기 실패");
     ok=true;
-   }finally{EndUpdateResource(update,!ok);}
+   }finally{bool written=EndUpdateResource(update,!ok);if(ok&&!written)throw new IOException("아이콘 저장 실패: "+Marshal.GetLastWin32Error());}
   }
   static string GameExecutable(){
    try{string dir=Core.Load().GameDirectory;if(!String.IsNullOrWhiteSpace(dir)){string exe=Path.Combine(dir,"MMyth.exe");if(File.Exists(exe))return exe;}}catch{}
@@ -62,7 +62,8 @@ namespace Myth {
     if(named&&(game==null||HasIcon(current)))return false;
     if(!named&&File.Exists(desired)&&(game==null||HasIcon(desired))){Start(desired);return true;}
     string staged=desired+".new";File.Copy(current,staged,true);
-    try{if(game!=null)CopyIcon(game,staged);}catch(Exception ex){Core.Log("아이콘 적용 생략: "+ex.Message);}
+    // A fresh executable is often held briefly by antivirus scanning; retry.
+    if(game!=null){Exception last=null;for(int attempt=0;attempt<8;attempt++){try{CopyIcon(game,staged);if(HasIcon(staged)){last=null;break;}last=new IOException("아이콘 확인 실패");}catch(Exception ex){last=ex;}System.Threading.Thread.Sleep(400);}if(last!=null)Core.Log("아이콘 적용 생략: "+last.Message);}
     // A running executable can be renamed but not overwritten.
     if(named)File.Move(current,current+".old");else if(File.Exists(desired))File.Delete(desired);
     try{File.Move(staged,desired);}catch{if(named&&!File.Exists(current))File.Move(current+".old",current);throw;}
