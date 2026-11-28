@@ -137,3 +137,21 @@ def magic_checks(image,patched):
 native=magic_checks(source,False)
 for m in ('portable','svga','hd','wide'):assert magic_checks(build(m),True)==native and any(any(f) for f in native)
 print('PASS magic: magic/1_magic in any case send one marked cheat command; real builder+queue+dispatcher toggle it one tick later in every resolution; setter and regeneration keep mana full; off/reset restore native behaviour; native cheat words unchanged')
+# Ground-unit draw pass (00480C93..0048107A): HD modes must traverse the same +/-24 tiles as the terrain,
+# otherwise units vanish towards the screen corners. Original resolution keeps the native +/-13.
+def unit_pass(image):
+ from unicorn import UC_HOOK_CODE
+ from unicorn.x86_const import UC_X86_REG_EAX,UC_X86_REG_EIP,UC_X86_REG_ESI
+ p=pefile.PE(data=image);u=Uc(UC_ARCH_X86,UC_MODE_32)
+ u.mem_map(0x400000,(p.OPTIONAL_HEADER.SizeOfImage+0xfff)&~0xfff);u.mem_write(0x400000,p.get_memory_mapped_image())
+ u.mem_map(0x200000,0x100000);obj=0x210000;u.mem_write(obj+0x4354,struct.pack('<ii',80,90));u.mem_write(obj+0x8c,struct.pack('<hh',160,160))
+ seen=set()
+ def h(uc,a,s,d):   # fog query: record the tile and report "hidden" so nothing else runs
+  esp=uc.reg_read(UC_X86_REG_ESP);seen.add(struct.unpack('<ii',uc.mem_read(esp+4,8)));uc.reg_write(UC_X86_REG_EAX,1)
+  uc.reg_write(UC_X86_REG_ESP,esp+12);uc.reg_write(UC_X86_REG_EIP,struct.unpack('<I',uc.mem_read(esp,4))[0])
+ u.hook_add(UC_HOOK_CODE,h,begin=0x42bee0,end=0x42bee0);u.reg_write(UC_X86_REG_ESI,obj);u.reg_write(UC_X86_REG_ESP,0x2e0000)
+ u.emu_start(0x480c93,0x48107a,count=5000000);return seen
+square=lambda n:{(x,y) for x in range(80-n,80+n) for y in range(90-n,90+n)}
+assert unit_pass(source)==square(13) and unit_pass(build('portable'))==square(13)
+for m in ('svga','hd','wide'):assert unit_pass(build(m))==square(24),m
+print('PASS ground-unit pass covers +/-24 tiles in 800x600/1024x768/1280x720 (was +/-13); 640x480 unchanged')

@@ -31,7 +31,7 @@
     }
   },
   "SourceSHA256": "1b70b78e8ec040697fced744cbc5f0d2a7ff3477cce35fce3185200f031ceabf",
-  "OutputSHA256": "6c1d18f5d0a1487a5a209469b555c182a616af1b1ca81f49365c315212d2c677",
+  "OutputSHA256": "93a48af648d1279c942b620d9211b4d71bafe1958c4596d6cf230edd9f1591d7",
   "Edits": [
     {
       "Offset": 246,
@@ -902,6 +902,42 @@
       "Before": "0d",
       "After": "18",
       "Note": "Verified HD patch offset 0x80c22"
+    },
+    {
+      "Offset": 527516,
+      "Before": "0d",
+      "After": "18",
+      "Note": "Verified HD patch offset 0x80c9c"
+    },
+    {
+      "Offset": 527533,
+      "Before": "0d",
+      "After": "18",
+      "Note": "Verified HD patch offset 0x80cad"
+    },
+    {
+      "Offset": 527557,
+      "Before": "0d",
+      "After": "18",
+      "Note": "Verified HD patch offset 0x80cc5"
+    },
+    {
+      "Offset": 527561,
+      "Before": "0d",
+      "After": "18",
+      "Note": "Verified HD patch offset 0x80cc9"
+    },
+    {
+      "Offset": 528461,
+      "Before": "0d",
+      "After": "18",
+      "Note": "Verified HD patch offset 0x8104d"
+    },
+    {
+      "Offset": 528490,
+      "Before": "0d",
+      "After": "18",
+      "Note": "Verified HD patch offset 0x8106a"
     },
     {
       "Offset": 532559,
