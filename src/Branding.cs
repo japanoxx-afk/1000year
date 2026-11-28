@@ -22,6 +22,9 @@ namespace Myth {
   [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern IntPtr BeginUpdateResource(string file,bool deleteExisting);
   [DllImport("kernel32.dll",SetLastError=true)]static extern bool UpdateResource(IntPtr update,IntPtr type,IntPtr name,ushort language,byte[] data,uint size);
   [DllImport("kernel32.dll",SetLastError=true)]static extern bool EndUpdateResource(IntPtr update,bool discard);
+  [DllImport("shell32.dll",CharSet=CharSet.Unicode)]static extern void SHChangeNotify(int eventId,uint flags,string item1,IntPtr item2);
+  // Explorer caches icons by path; announce the new icon for the rewritten file.
+  static void RefreshShell(string file){try{SHChangeNotify(0x2000,0x0005,file,IntPtr.Zero);SHChangeNotify(0x08000000,0,null,IntPtr.Zero);}catch{}}
   static byte[] Read(IntPtr module,IntPtr name,IntPtr type){IntPtr r=FindResource(module,name,type);if(r==IntPtr.Zero)return null;IntPtr h=LoadResource(module,r);uint n=SizeofResource(module,r);IntPtr p=LockResource(h);if(p==IntPtr.Zero||n==0)return null;var b=new byte[n];Marshal.Copy(p,b,0,(int)n);return b;}
   static IntPtr FirstGroup(IntPtr module){IntPtr found=IntPtr.Zero;EnumResourceNames(module,GroupType,(m,t,n,p)=>{found=n;return false;},IntPtr.Zero);return found;}
   public static bool HasIcon(string exe){IntPtr m=LoadLibraryEx(exe,IntPtr.Zero,LoadAsData);if(m==IntPtr.Zero)return false;try{return FirstGroup(m)!=IntPtr.Zero;}finally{FreeLibrary(m);}}
@@ -63,7 +66,7 @@ namespace Myth {
     // A running executable can be renamed but not overwritten.
     if(named)File.Move(current,current+".old");else if(File.Exists(desired))File.Delete(desired);
     try{File.Move(staged,desired);}catch{if(named&&!File.Exists(current))File.Move(current+".old",current);throw;}
-    Core.Log("Launcher renamed: "+desired);Start(desired);return true;
+    RefreshShell(desired);Core.Log("Launcher renamed: "+desired+(game!=null?" icon="+HasIcon(desired):""));Start(desired);return true;
    }catch(Exception ex){Core.Log("런처 이름·아이콘 적용 실패: "+ex.Message);return false;}
   }
   static void Start(string exe){Process.Start(new ProcessStartInfo(exe,"--branded"){WorkingDirectory=Path.GetDirectoryName(exe),UseShellExecute=false});}
