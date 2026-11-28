@@ -324,7 +324,7 @@ uint32_t __cdecl observerHud(){serviceBattleMusic();attachLocalInput();confineCu
 #ifdef MYTH_PERF_TEST
  auto started=counterNow();drawResources();profileRender(1,started);started=counterNow();drawTimer();profileRender(2,started);
 #else
- drawResources();drawTimer();drawHeroes();
+ drawQueuedBuildings();drawResources();drawTimer();drawHeroes();
 #endif
 #if defined(MYTH_OBSERVER_CAMERA_TEST) || defined(MYTH_HUD_TEST)
  dumpObserverFrame();

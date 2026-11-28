@@ -50,7 +50,9 @@ def ground(image,ctrl,shift,command):
  u.mem_map(0x400000,(p.OPTIONAL_HEADER.SizeOfImage+0xfff)&~0xfff);u.mem_write(0x400000,p.get_memory_mapped_image())
  u.mem_map(0x200000,0x100000);u.mem_write(0x435040,b'\xc3')
  put=lambda a,v:u.mem_write(a,struct.pack('<I',v))
- put(0xced908,ctrl);put(0xced910,shift);u.mem_write(0xa6ef82,struct.pack('<H',command));put(0xa79504,30);put(0xa79508,40);put(0xa7950c,25)
+ put(0xced908,ctrl);put(0xced910,shift);u.mem_write(0xa6ef82,struct.pack('<H',command))
+ # Command 180 builds type 5 (a building, flags bit 2); command 3 moves (type 0).
+ u.mem_write(0xb8dd80+180*24+4,struct.pack('<H',5));put(0xb60d5c+5*896,0x4842);put(0xa79504,30);put(0xa79508,40);put(0xa7950c,25)
  u.reg_write(UC_X86_REG_EBX,0);u.reg_write(UC_X86_REG_EDI,1);u.reg_write(UC_X86_REG_ESP,0x2e0000)
  sent=[]
  def h(uc,a,s,d):
@@ -62,9 +64,9 @@ def ground(image,ctrl,shift,command):
  return kind,flag,xy,param,struct.unpack('<H',u.mem_read(0xa6ef82,2))[0]
 for m in ('portable','svga','hd','wide'):
  image=build(m)
- assert ground(image,0,0,0x23)==(0x23,1,30|40<<16,25,0)      # plain click: immediate, leave placement
- assert ground(image,1,0,0x23)==(0x23,0,30|40<<16,25,0)      # Ctrl (native): queued, leave placement
- assert ground(image,0,1,0x23)==(0x23,0,30|40<<16,25,0x23)   # Shift: queued, stay in placement
- assert ground(image,0,1,3)==(3,0,30|40<<16,25,0)            # Shift move: queued waypoint, mode ends
-assert ground(source,0,1,0x23)==(0x23,1,30|40<<16,25,0) and ground(source,1,0,0x23)[1]==0
+ assert ground(image,0,0,180)==(180,1,30|40<<16,25,0)      # plain building click: immediate, leave placement
+ assert ground(image,1,0,180)==(180,0,30|40<<16,25,0)      # Ctrl (native): queued, leave placement
+ assert ground(image,0,1,180)==(180,0,30|40<<16,25,180)    # Shift building: queued, stay in placement
+ assert ground(image,0,1,3)==(3,0,30|40<<16,25,0)          # Shift move: queued waypoint, mode ends
+assert ground(source,0,1,180)==(180,1,30|40<<16,25,0) and ground(source,1,0,180)[1]==0
 print('PASS Shift queues construction and keeps placement mode; plain/Ctrl clicks unchanged; original ignored Shift')

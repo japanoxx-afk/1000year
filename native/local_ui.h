@@ -54,6 +54,36 @@ void confineCursor(){
  if(!cursorClipped||!EqualRect(&current,&area)){if(ClipCursor(&area))cursorClipped=true;}
 }
 
+// ---- Queued construction previews ---------------------------------------
+// Each unit keeps up to 10 queued orders (+3A0 count, 12-byte entries at +3A4:
+// command word, flags, tile x|y<<16, parameter). For my units' queued commands
+// whose command-table type (+4) is a building, draw the game's own placement
+// preview (00483080, the routine used under the cursor) at the queued tile.
+struct QueuedBuilding {int type,x,y;};
+bool showQueuedBuildings=true;
+std::vector<QueuedBuilding> queuedBuildings(){
+ std::vector<QueuedBuilding> result;int me=mem<int32_t>(0xcbdc3c);
+ for(unsigned id=1;id<1200;++id){
+  if(!mem<uint16_t>(0xa79620+id*2))continue;uintptr_t u=0x7ca6e8+id*2308;
+  if(mem<int32_t>(u+0x9c)<=0||(int)mem<int8_t>(u+0x76)!=me)continue;
+  int count=mem<int16_t>(u+0x3a0);if(count<=0||count>10)continue;
+  for(int i=0;i<count;++i){
+   uintptr_t e=u+0x3a4+i*12;unsigned kind=mem<uint16_t>(e);if(kind<1||kind>363||kind==0x4d)continue;
+   int type=mem<int16_t>(0xb8dd80+kind*24+4);if(type<1||type>=200||!(mem<uint8_t>(0xb60d5c+type*896)&2))continue;
+   uint32_t tile=mem<uint32_t>(e+4);result.push_back({type,(int16_t)(tile&0xffff),(int16_t)(tile>>16)});
+  }
+ }
+ return result;
+}
+void drawQueuedBuildings(){
+ if(playback||!showQueuedBuildings||failed||mem<uint16_t>(0x4dec90)!=3||mem<int32_t>(0x115e304)!=8)return;
+ void* surface=mem<void*>(0x65181c);if(!surface)return;
+ auto queued=queuedBuildings();if(queued.empty())return;
+ if(((int(__thiscall*)(void*,void*))0x4af970)((void*)0x115e2f8,surface)!=1)return;
+ for(const auto& q:queued)((void(__thiscall*)(void*,int,int,int,int,int))0x483080)((void*)0xca5598,q.type,q.x,q.y,1,0);
+ ((int(__thiscall*)(void*,void*))0x4afb30)((void*)0x115e2f8,surface);
+}
+
 // ---- Hero portrait bar ---------------------------------------------------
 struct HeroCard {RECT box;uint32_t handle;};
 std::vector<HeroCard> heroCards;

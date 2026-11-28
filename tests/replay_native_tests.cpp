@@ -130,6 +130,16 @@ int main(){
  assert(localWindowProc(nullptr,WM_LBUTTONUP,0,0)==0&&!swallowLeftUp&&forwarded.size()==before);
  mem<int32_t>(0xd375b0)=60;assert(localWindowProc(nullptr,WM_LBUTTONDOWN,0,0)==7);
  heroCards.clear();localPreviousProc=nullptr;
- std::cout<<"PASS: asynchronous progress status never overwrites COMPLETE; local hotkey translation/release/chat and menu passthrough, polled keys unmapped, hero ownership and card hit testing\n";
+ // Queued construction previews: only my units' queued building commands.
+ memset((void*)0xb8dd80,0,364*24);mem<int16_t>(0xb8dd80+180*24+4)=5;mem<int16_t>(0xb8dd80+3*24+4)=0;mem<uint32_t>(0xb60d5c+5*896)=0x4842;
+ uintptr_t worker=0x7ca6e8+40*2308;memset((void*)worker,0,2308);mem<uint16_t>(0xa79620+40*2)=7;mem<int32_t>(worker+0x9c)=80;mem<int8_t>(worker+0x76)=0;
+ mem<int16_t>(worker+0x3a0)=3;
+ mem<uint16_t>(worker+0x3a4)=180;mem<uint32_t>(worker+0x3a8)=30|(40<<16);
+ mem<uint16_t>(worker+0x3a4+12)=3;mem<uint32_t>(worker+0x3a8+12)=31|(41<<16);
+ mem<uint16_t>(worker+0x3a4+24)=180;mem<uint32_t>(worker+0x3a8+24)=32|(40<<16);
+ {auto q=queuedBuildings();size_t mine=0;for(auto& b:q)if(b.type==5&&b.y==40&&(b.x==30||b.x==32))++mine;assert(mine==2);
+  mem<int8_t>(worker+0x76)=1;for(auto& b:queuedBuildings())assert(!(b.type==5&&b.y==40&&(b.x==30||b.x==32)));mem<int8_t>(worker+0x76)=0;}
+ memset((void*)worker,0,2308);mem<uint16_t>(0xa79620+40*2)=0;
+ std::cout<<"PASS: asynchronous progress status never overwrites COMPLETE; local hotkey translation/release/chat and menu passthrough, polled keys unmapped, hero ownership and card hit testing, queued building previews (mine only, buildings only)\n";
  std::cout<<"PASS: hero arrival visuals/chime suppression, replay/live HUD timer, raw/derived fog restoration, enemy/dead/embarked visibility, indexed panel stability/clean restoration across pitch changes, positional combat audio, resource rows, x86 eight-player capture/injection, handle preservation, queue limits, state checksums, bounded parser\n";
 }
