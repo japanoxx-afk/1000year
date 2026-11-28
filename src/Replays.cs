@@ -107,7 +107,7 @@ namespace Myth {
   public static void Register(){
    using(var extension=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\.mythreplay"))extension.SetValue("","1000year.Replay");
    using(var type=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\1000year.Replay"))type.SetValue("","천년의신화 리플레이");
-   using(var command=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\1000year.Replay\shell\open\command"))command.SetValue("",OpenCommand(Path.Combine(Core.Home,"MythLauncher.exe")));
+   using(var command=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\1000year.Replay\shell\open\command"))command.SetValue("",OpenCommand(Application.ExecutablePath));
    SHChangeNotify(0x08000000,0,IntPtr.Zero,IntPtr.Zero);
   }
  }

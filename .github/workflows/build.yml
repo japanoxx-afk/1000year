@@ -18,7 +18,7 @@ jobs:
         with:
           name: MythLauncher
           path: |
-            dist/MythLauncher.exe
+            dist/MMyth_launcher_*.exe
             dist/MythLauncher.zip
             dist/MythLauncher.zip.sha256
       - name: Publish tagged release
@@ -29,5 +29,5 @@ jobs:
         run: |
           $version=[regex]::Match((Get-Content src/Core.cs -Raw),'Version="([^"]+)"').Groups[1].Value
           if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag/source version mismatch' }
-          gh release create $env:GITHUB_REF_NAME dist/MythLauncher.exe dist/MythLauncher.zip dist/MythLauncher.zip.sha256 --title "1000year Launcher $version" --notes-file PATCHNOTES.md --verify-tag
+          gh release create $env:GITHUB_REF_NAME "dist/MMyth_launcher_$version.exe" dist/MythLauncher.zip dist/MythLauncher.zip.sha256 --title "1000year Launcher $version" --notes-file PATCHNOTES.md --verify-tag
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }

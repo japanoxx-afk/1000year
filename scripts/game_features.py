@@ -96,6 +96,15 @@ def install(g):
  add esp,24; ret;
  move: popad; jmp 0x4358a0''')
  hook(0x40e627,5,f'call {rally}; jmp 0x40e62c')
+ # Mireuk flame field (projectile type 28, 00458C89): each enemy found in the
+ # 7x7 field can call a strike (attack 7, radius 2). The native test accepted
+ # only living units (+1D8 & 0x2000). Also accept mobile mechanical units:
+ # siege engines and ships carry 0x4000 together with the mobile bit 0x1.
+ # Buildings (0x4000 without 0x1) keep the original behaviour.
+ g['hook'](0x458dcd,16,'''movsx eax,di; imul eax,eax,2308; mov eax,dword ptr [eax+0x7ca8c0];
+ test eax,0x2000; jnz living; and eax,0x4001; cmp eax,0x4001; jne other;
+ living: mov eax,1; jmp 0x458ddd;
+ other: xor eax,eax; jmp 0x458ddd''')
  # Original-resolution clients need identical simulation/input rules, without
  # importing HD resource layout, selection widgets or a display-mode switch.
  if g.get('rules_only'):return dict(rally=rally,exit_score=exit_score)

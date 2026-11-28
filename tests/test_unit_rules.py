@@ -26,3 +26,18 @@ assert supply(t,42)==15 and supply(t,63)==15 and supply(original,42)==supply(ori
 changed=[k for k in range(200) if t[k*896:(k+1)*896]!=original[k*896:(k+1)*896]];assert changed==[42,63],changed
 for m in ('portable','svga','hd','wide'):assert table(build('replay-'+m+'-0.7.1'))==original
 print('PASS identical unit table in 640x480/800x600/1024x768/1280x720; only both watchtowers changed (supply 5->15); 0.7.1 replay recipes keep 5')
+# Mireuk flame field target test (00458DCD..00458DDD) with real type flags:
+# living units and mobile siege/ships call a strike; buildings and empty slots do not.
+cases={'무사':0x2005,'궁예':0x22005,'마름쇠차':0x2404005,'포차':0x2044005,'전선':0x2004015,'성채':0x4842,'망루':0x4846,'회의소':0x1c8c2}
+want={'무사':1,'궁예':1,'마름쇠차':1,'포차':1,'전선':1,'성채':0,'망루':0,'회의소':0}
+def flame(image,flags):
+ p=pefile.PE(data=image);u=Uc(UC_ARCH_X86,UC_MODE_32)
+ u.mem_map(0x400000,(p.OPTIONAL_HEADER.SizeOfImage+0xfff)&~0xfff);u.mem_write(0x400000,p.get_memory_mapped_image())
+ u.mem_map(0x200000,0x100000);from unicorn.x86_const import UC_X86_REG_EDI,UC_X86_REG_EAX
+ u.mem_write(0x7ca6e8+77*2308+0x1d8,struct.pack('<I',flags));u.reg_write(UC_X86_REG_EDI,0xabcd0000|77);u.reg_write(UC_X86_REG_ESP,0x2e0000)
+ u.emu_start(0x458dcd,0x458ddd,count=200);return u.reg_read(UC_X86_REG_EAX)
+for m in ('portable','svga','hd','wide'):
+ image=build(m)
+ for name,flags in cases.items():assert flame(image,flags)==want[name],(m,name)
+for name,flags in cases.items():assert flame(source,flags)==(1 if flags&0x2000 else 0),name
+print('PASS Mireuk flame field: living + mobile siege/ships strike in every resolution; buildings unchanged; original accepted living only')

@@ -10,14 +10,14 @@ using System.Threading.Tasks;
 namespace Myth {
  static class Program {
   [System.Runtime.InteropServices.DllImport("user32.dll")]static extern bool SetProcessDPIAware();
-  [STAThread] static void Main(string[] args) {if(args.Length==3&&args[0]=="--replay-watch"){Replays.Watch(Int32.Parse(args[1]),args[2]);return;}SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);if(args.Length==2&&args[0]=="--replay"){try{var settings=Core.Load();string game=String.IsNullOrWhiteSpace(settings.GameDirectory)?Core.Home:settings.GameDirectory;Application.Run(Replays.Play(Path.GetFullPath(args[1]),game,settings.Fullscreen,false));}catch(Exception ex){MessageBox.Show(ex.Message,"리플레이 실행 실패");}return;}bool created;using(var mutex=new Mutex(true,"Local\\1000year-Launcher",out created)){if(!created){MessageBox.Show("런처가 이미 실행 중입니다.");return;}Application.Run(new Launcher());}}
+  [STAThread] static void Main(string[] args) {bool branded=args.Length==1&&args[0]=="--branded";if((args.Length==0||branded)&&Branding.Apply(Application.ExecutablePath,branded))return;if(args.Length==3&&args[0]=="--replay-watch"){Replays.Watch(Int32.Parse(args[1]),args[2]);return;}SetProcessDPIAware();Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);if(args.Length==2&&args[0]=="--replay"){try{var settings=Core.Load();string game=String.IsNullOrWhiteSpace(settings.GameDirectory)?Core.Home:settings.GameDirectory;Application.Run(Replays.Play(Path.GetFullPath(args[1]),game,settings.Fullscreen,false));}catch(Exception ex){MessageBox.Show(ex.Message,"리플레이 실행 실패");}return;}bool created;using(var mutex=new Mutex(true,"Local\\1000year-Launcher",out created)){if(!created){MessageBox.Show("런처가 이미 실행 중입니다.");return;}Application.Run(new Launcher());}}
  }
  public sealed class Launcher:Form {
   static readonly int[] ModeOrder={0,4,1,2,3};
   int SelectedMode{get{return ModeOrder[Math.Max(0,mode.SelectedIndex)];}}
   Settings settings=Core.Load();TextBox path;ComboBox mode;CheckBox full,stretch,heroBar,clip,auto,record;TrackBar musicVolume;Label musicLevel,status;Button play,update,replays,hotkeys,editor;bool busy;FileSystemWatcher replayWatcher;CancellationTokenSource stop=new CancellationTokenSource();
   public Launcher() {
-   Text="천년의신화 런처 · "+Core.Version;ClientSize=new Size(720,680);MinimumSize=Size;MaximumSize=Size;StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(23,29,35);ForeColor=Color.FromArgb(236,229,214);Font=new Font("맑은 고딕",10);
+   Text="천년의신화 런처 · "+Core.Version;try{Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);}catch{}ClientSize=new Size(720,680);MinimumSize=Size;MaximumSize=Size;StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(23,29,35);ForeColor=Color.FromArgb(236,229,214);Font=new Font("맑은 고딕",10);
    Controls.Add(new Label{Text="천년의신화",Font=new Font("맑은 고딕",27,FontStyle.Bold),Location=new Point(30,22),Size=new Size(480,58)});
    Controls.Add(new Label{Text="MILLENNIUM MYTH  /  V1.070KR",ForeColor=Color.FromArgb(190,157,98),Location=new Point(34,84),Size=new Size(500,25)});
    Controls.Add(new Label{Text="게임 설치 폴더",Location=new Point(34,126),Size=new Size(200,24)});
