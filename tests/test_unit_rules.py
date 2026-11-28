@@ -70,26 +70,35 @@ for m in ('portable','svga','hd','wide'):
  assert ground(image,0,1,3)==(3,0,30|40<<16,25,0,0)        # Shift move: queued waypoint, mode ends
 assert ground(source,0,1,180)==(180,1,30|40<<16,25,0,0) and ground(source,1,0,180)[1]==0
 print('PASS Shift queues construction and keeps placement mode; plain/Ctrl clicks unchanged; original ignored Shift')
-# "1_magic": chat word -> marked native cheat command -> toggle -> mana setter.
+# "magic": chat word -> marked native cheat command -> toggle -> mana setter and per-tick refill.
 def magic_checks(image,patched):
  from unicorn import UC_HOOK_CODE
- from unicorn.x86_const import UC_X86_REG_ECX,UC_X86_REG_EAX,UC_X86_REG_EIP
- p=pefile.PE(data=image);u=Uc(UC_ARCH_X86,UC_MODE_32)
- u.mem_map(0x400000,(p.OPTIONAL_HEADER.SizeOfImage+0xfff)&~0xfff);u.mem_write(0x400000,p.get_memory_mapped_image())
- u.mem_map(0x200000,0x100000);u.mem_write(0x2f0000,b'\xc3');u.mem_write(0x435040,b'\xc3')
- sec=p.sections[-1];flag=0x400000+sec.VirtualAddress+0x2620
+ from unicorn.x86_const import UC_X86_REG_ECX,UC_X86_REG_EAX,UC_X86_REG_EIP,UC_X86_REG_ESI,UC_X86_REG_EDI
+ p=pefile.PE(data=image);MARK=0x4947414d
+ def machine(stub):
+  u=Uc(UC_ARCH_X86,UC_MODE_32)
+  u.mem_map(0x400000,(p.OPTIONAL_HEADER.SizeOfImage+0xfff)&~0xfff);u.mem_write(0x400000,p.get_memory_mapped_image())
+  u.mem_map(0x200000,0x100000);u.mem_write(0x2f0000,b'\xc3')
+  if stub:u.mem_write(0x435040,b'\xc3')
+  return u
+ u=machine(True);sec=p.sections[-1];flag=0x400000+sec.VirtualAddress+0x2620
  sent=[]
  def h(uc,a,s,d):sent.append(struct.unpack('<5I',uc.mem_read(uc.reg_read(UC_X86_REG_ESP)+4,20)))
  u.hook_add(UC_HOOK_CODE,h,begin=0x435040,end=0x435040)
- def call(addr,args=b'',ecx=0,count=20000):
+ def call(addr,args=b'',ecx=0,count=20000,u=u):
   u.reg_write(UC_X86_REG_ESP,0x2e0000);u.mem_write(0x2e0000,struct.pack('<I',0x2f0000)+args);u.reg_write(UC_X86_REG_ECX,ecx)
   u.emu_start(addr,0x2f0000,count=count);assert u.reg_read(UC_X86_REG_EIP)==0x2f0000;return u.reg_read(UC_X86_REG_EAX)
- MARK=0x4947414d
- for text,expect in ((b'1_magic\0',patched),(b'1_magi\0',False),(b'1_magics\0',False),(b'hello\0',False)):
-  sent.clear();u.mem_write(0x250000,text);u.mem_write(0xcbdc3c,struct.pack('<I',2));u.mem_write(0x260000,bytes(0x100))
-  call(0x41a6a0,struct.pack('<I',0x250000),ecx=0x260000)
-  assert (sent==[(2,0x15e,MARK,0,1)])==expect,(text,sent)
- if not patched:return
+ words=((b'magic',1),(b'1_magic',1),(b'MAGIC',1),(b'Magic ',1),(b'  1_Magic  ',1),(b'magi',0),(b'magics',0),(b'1_magi',0),
+        (b'magic x',0),(b'amagic',0),(b'1_',0),(b'',0),(b'hello',0),(b'1_goods',0))
+ for text,expect in words:
+  sent.clear();u.mem_write(0x250000,text+b'\0'+bytes(16));u.mem_write(0xcbdc3c,struct.pack('<I',2));u.mem_write(0x260000,bytes(0x100))
+  call(0x41a6a0,struct.pack('<II',0x250000,0),ecx=0x260000)
+  assert (sent==[(2,0x15e,MARK,0,1)])==bool(expect and patched),(text,sent)
+ # Native words still reach the native parser (1_goods sets its request flag).
+ flags=[]
+ for text in (b'1_goods',b'1_map',b'1_level'):
+  u.mem_write(0x250000,text+b'\0');u.mem_write(0x260000,bytes(0x100));call(0x41a6a0,struct.pack('<II',0x250000,0),ecx=0x260000);flags.append(bytes(u.mem_read(0x260000,0x80)))
+ if not patched:return flags
  packet=lambda kind,xy:struct.pack('<HBBII',kind,0,1,xy,0)+bytes(92)
  u.mem_write(0x260000,bytes(0x100))
  hero=0x7ca6e8+33*2308;u.mem_write(hero+0x10c,struct.pack('<i',150));u.mem_write(hero+0xa0,struct.pack('<i',3))
@@ -98,10 +107,33 @@ def magic_checks(image,patched):
  assert bytes(u.mem_read(0x260000,0x80))==bytes(0x80)          # native map cheat state untouched
  unit=0x270000;setm=lambda v:u.mem_write(unit+0xa0,struct.pack('<i',v));getm=lambda:struct.unpack('<i',u.mem_read(unit+0xa0,4))[0]
  u.mem_write(unit+0x10c,struct.pack('<i',100));setm(100);call(0x416e10,struct.pack('<i',0),ecx=unit);assert getm()==100
+ # Regeneration step (00419632..0041963C): refills while on, leaves mana alone while off; registers as native.
+ def regen(v):
+  setm(v);u.reg_write(UC_X86_REG_ESI,unit);u.reg_write(UC_X86_REG_ESP,0x2e0000);u.mem_write(0x2e0024,struct.pack('<i',77))
+  u.emu_start(0x419632,0x41963c,count=100);assert u.reg_read(UC_X86_REG_ESP)==0x2e0000 and u.reg_read(UC_X86_REG_EAX)==77
+  assert u.reg_read(UC_X86_REG_EDI)==getm();return getm()
+ assert regen(0)==100 and regen(40)==100 and regen(100)==100
  call(0x41aa00,packet(0x15e,MARK),ecx=0x260000);assert u.mem_read(flag,1)[0]==0      # toggles off
+ assert regen(0)==0 and regen(40)==40
  call(0x416e10,struct.pack('<i',0),ecx=unit);assert getm()==0
  call(0x416e10,struct.pack('<i',250),ecx=unit);assert getm()==100;call(0x416e10,struct.pack('<i',-5),ecx=unit);assert getm()==0
  call(0x41aa00,packet(0x15e,MARK),ecx=0x260000);call(0x41a3e0,ecx=0x260000);assert u.mem_read(flag,1)[0]==0  # battle init resets
-for m in ('portable','svga','hd','wide'):magic_checks(build(m),True)
-magic_checks(source,False)
-print('PASS 1_magic: exact chat word sends a marked cheat command, toggles in every resolution, mana setter keeps maximum, off/reset restore native behaviour')
+ # A plain native 0x15E (no marker) is not ours.
+ call(0x41aa00,packet(0x15e,0),ecx=0x260000,count=2000000);assert u.mem_read(flag,1)[0]==0
+ # End to end with the real command builder, pending queue and dispatcher:
+ # chat at tick 100 -> executed by the dispatcher at tick 101 -> Mireuk's 100 mana is not consumed.
+ e=machine(False);ecall=lambda *a,**k:call(*a,u=e,**k)
+ e.mem_write(0xb8dd80+0x15e*24,struct.pack('<H',2))             # command table: native cheat type (set by game init)
+ e.mem_write(0xcbdc3c,struct.pack('<I',2));e.mem_write(0xa6ea50,struct.pack('<I',100));e.mem_write(0x250000,b'magic\0'+bytes(16))
+ g=0x7ca6e8+33*2308;e.mem_write(g+0x10c,struct.pack('<i',100));e.mem_write(g+0xa0,struct.pack('<i',0))
+ ecall(0x41a6a0,struct.pack('<II',0x250000,0),ecx=0xcbce78,count=200000)
+ assert struct.unpack('<H',e.mem_read(0xa6f27c,2))[0]==1 and e.mem_read(flag,1)[0]==0
+ ecall(0x4352d0,count=2000000);assert e.mem_read(flag,1)[0]==0   # same tick: queued for the next one
+ e.mem_write(0xa6ea50,struct.pack('<I',101));ecall(0x4352d0,count=2000000)
+ assert e.mem_read(flag,1)[0]==1 and struct.unpack('<i',e.mem_read(g+0xa0,4))[0]==100
+ ecall(0x416e10,struct.pack('<i',0),ecx=g);assert struct.unpack('<i',e.mem_read(g+0xa0,4))[0]==100   # cast: 100-100 stays 100
+ e.mem_write(0xa6ea50,struct.pack('<I',102));ecall(0x4352d0,count=2000000);assert e.mem_read(flag,1)[0]==1  # executed once
+ return flags
+native=magic_checks(source,False)
+for m in ('portable','svga','hd','wide'):assert magic_checks(build(m),True)==native and any(any(f) for f in native)
+print('PASS magic: magic/1_magic in any case send one marked cheat command; real builder+queue+dispatcher toggle it one tick later in every resolution; setter and regeneration keep mana full; off/reset restore native behaviour; native cheat words unchanged')

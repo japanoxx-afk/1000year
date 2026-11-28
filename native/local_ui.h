@@ -154,6 +154,11 @@ bool heroUnit(unsigned id);
 void logSpell(){
  static uint32_t until=0,lastTick=0xffffffff,lines=0;
  if(playback||mem<uint16_t>(0x4dec90)!=3)return;uint32_t tick=mem<uint32_t>(0xa6ea50);
+ // The "magic" cheat flag lives in the patch section; note every toggle.
+ static int magicKnown=-1;static uint8_t magicLast=0;
+ if(magicKnown<0){MEMORY_BASIC_INFORMATION m{};magicKnown=VirtualQuery((void*)0x11d2620,&m,sizeof m)&&m.State==MEM_COMMIT&&!(m.Protect&(PAGE_NOACCESS|PAGE_GUARD));}
+ if(magicKnown>0&&mem<uint8_t>(0x11d2620)!=magicLast){magicLast=mem<uint8_t>(0x11d2620);
+  if(FILE* f=_wfopen((root+L"\\spell-log.txt").c_str(),L"ab")){fprintf(f,"tick=%u magic=%u\r\n",tick,magicLast);fclose(f);}}
  if(mem<uint16_t>(0xa6ef82)==49)until=tick+200;
  if(tick>=until||tick==lastTick||lines>4000)return;lastTick=tick;
  FILE* f=_wfopen((root+L"\\spell-log.txt").c_str(),L"ab");if(!f)return;

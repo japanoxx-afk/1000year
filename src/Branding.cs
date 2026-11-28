@@ -10,7 +10,8 @@ namespace Myth {
  // MythLauncher(-version).exe names that older installers require.
  public static class Branding {
   public static string FileName{get{return "MMyth_launcher_"+Core.Version+".exe";}}
-  const uint LoadAsData=0x2;static readonly IntPtr IconType=(IntPtr)3,GroupType=(IntPtr)14;
+  const uint LoadAsData=0x22; // data file + image resource: always the file on disk, never an already loaded module
+  static readonly IntPtr IconType=(IntPtr)3,GroupType=(IntPtr)14;
   delegate bool EnumNames(IntPtr module,IntPtr type,IntPtr name,IntPtr param);
   [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern IntPtr LoadLibraryEx(string path,IntPtr file,uint flags);
   [DllImport("kernel32.dll")]static extern bool FreeLibrary(IntPtr module);

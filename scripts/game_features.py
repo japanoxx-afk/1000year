@@ -124,14 +124,17 @@ def install(g):
  imul eax,eax,896; test byte ptr [eax+0xb60d5c],2; jz reset;
  mov byte ptr [0xa6ef80],1; jmp 0x46ed42;
  reset: mov word ptr [0xa6ef82],bx; jmp 0x46ed1f''')
- # "1_magic" cheat: mana is refilled when switched on and is not consumed. Like the native cheats it travels as
- # a type-2 command so every client and the replay toggle it on the same tick:
- # native cheat command 0x15E carries a marker in its unused tile field.
- MARK=0x4947414d;magic=g['va']+0x2620;word=g['va']+0x2600
- g['b'][g['raw']+0x2600:g['raw']+0x2608]=b'1_magic\0'
+ # "magic" cheat (also "1_magic", any letter case, surrounding spaces ignored): mana is refilled when switched
+ # on and is not consumed. Like the native cheats it travels as a type-2 command so every client and the replay
+ # toggle it on the same tick: native cheat command 0x15E carries a marker in its unused tile field.
+ MARK=0x4947414d;magic=g['va']+0x2620
  g['hook'](0x41a6a0,8,f'''push ebx; push ebp; push esi; push edi; mov edi,dword ptr [esp+0x14];
- pushad; mov esi,edi; mov edi,{word};
- next: mov al,byte ptr [esi]; cmp al,byte ptr [edi]; jne no; inc esi; inc edi; test al,al; jnz next;
+ pushad; mov esi,edi;
+ spaces: cmp byte ptr [esi],0x20; jne prefix; inc esi; jmp spaces;
+ prefix: cmp word ptr [esi],0x5f31; jne letters; add esi,2;
+ letters: mov eax,dword ptr [esi]; or eax,0x20202020; cmp eax,0x6967616d; jne no;
+ mov al,byte ptr [esi+4]; or al,0x20; cmp al,0x63; jne no; add esi,5;
+ rest: mov al,byte ptr [esi]; inc esi; cmp al,0x20; je rest; test al,al; jnz no;
  push 1; push 0; push {MARK}; push 0x15e; movsx eax,word ptr [0xcbdc3c]; push eax; call 0x435040; add esp,20;
  no: popad; jmp 0x41a6a8''')
  g['hook'](0x41aa00,8,f'''cmp word ptr [esp+4],0x15e; jne native; cmp dword ptr [esp+8],{MARK}; jne native;
@@ -147,6 +150,14 @@ def install(g):
  g['hook'](0x416e10,7,f'''cmp byte ptr [{magic}],0; je native;
  mov eax,dword ptr [ecx+0x10c]; mov dword ptr [ecx+0xa0],eax; xor ax,ax; ret 4;
  native: mov eax,dword ptr [esp+4]; test ax,ax; jmp 0x416e17''')
+ # A few spells subtract their cost without the setter. The per-unit mana regeneration step runs every
+ # simulation tick, so it restores those too (ESI=unit).
+ assert bytes(g['b'][g['p'].get_offset_from_rva(0x19632):][:10])==bytes.fromhex('8bbea00000008b442424')
+ g['hook'](0x419632,10,f'''mov edi,dword ptr [esi+0xa0]; mov eax,dword ptr [esp+0x24];
+ cmp byte ptr [{magic}],0; je back; push eax; mov eax,dword ptr [esi+0x10c];
+ cmp edi,eax; jge full; mov dword ptr [esi+0xa0],eax; mov edi,eax;
+ full: pop eax;
+ back: jmp 0x41963c''')
  # Original-resolution clients need identical simulation/input rules, without
  # importing HD resource layout, selection widgets or a display-mode switch.
  if g.get('rules_only'):return dict(rally=rally,exit_score=exit_score)
